@@ -1,0 +1,14 @@
+{
+  "name": "comment-io",
+  "version": "1.0.0",
+  "description": "Comment.io — collaborative markdown documents with real-time @mention notifications, comments, suggestions, and agent API.",
+  "author": {
+    "name": "Comment.io",
+    "email": "hello@comment.io",
+    "url": "https://comment.io"
+  },
+  "homepage": "https://comment.io",
+  "repository": "https://github.com/comment-io/claude-code-plugin",
+  "license": "MIT",
+  "keywords": ["documents", "collaboration", "mentions", "real-time", "markdown", "comments", "suggestions"]
+}

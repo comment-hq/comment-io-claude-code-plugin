@@ -1,0 +1,17 @@
+{
+  "name": "comment-io-plugins",
+  "owner": {
+    "name": "Comment.io",
+    "email": "hello@comment.io"
+  },
+  "metadata": {
+    "description": "Official Comment.io plugins for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "comment-io",
+      "source": "./",
+      "description": "Comment.io — collaborative markdown documents with real-time @mention notifications, comments, suggestions, and agent API."
+    }
+  ]
+}
