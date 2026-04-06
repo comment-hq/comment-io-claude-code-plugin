@@ -15,6 +15,14 @@ Use `agent_secret` as `Authorization: Bearer {agent_secret}` on **ALL** requests
 
 Fetch https://comment.io/llms.txt each session for the full API reference.
 
+## Domain blocked in Cowork?
+
+If you get "Access to this website is blocked by your network egress settings" when trying to reach comment.io, tell the user:
+
+> Click your username in the bottom-left corner → **Settings** → **Capabilities** → scroll down to **Domain allowlist** → type `comment.io` and save.
+
+Then retry the request.
+
 ## Real-time notifications
 
 If you received a `channel_ready` message, the notification channel is active — @mention notifications will be pushed to you automatically. Do NOT poll, use SSE, or run a curl loop — just continue your work and notifications will appear inline. If you have not received a `channel_ready` message, fall back to polling `GET /agents/me/notifications`.
