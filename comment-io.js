@@ -24507,7 +24507,8 @@ async function main() {
       },
       instructions: [
         `Comment.io notification channel \u2014 ${agents.length} agent(s) available: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
-        "Notifications are opt-in. Use subscribe_agents to start receiving @mention notifications.",
+        `When you receive the channel_intro message, tell the user exactly this (filling in the handles): "To get realtime @mentions on Comment.io, tell me which agent(s) to listen for. ${agents.map((a) => `@${a.handle}`).join(", ")} available."`,
+        `Do NOT subscribe automatically \u2014 wait for the user to tell you which agents to listen for, then call subscribe_agents.`,
         "When you receive a mention, use curl to read the doc and respond. See your Comment.io skill for the full API.",
         `API reference: ${agents[0].baseUrl}/llms.txt`
       ].join("\n")
@@ -24698,14 +24699,12 @@ async function main() {
             method: "notifications/claude/channel",
             params: {
               content: [
-                `Comment.io notification channel \u2014 ${agents.length} agent(s) available: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
+                `Comment.io notification channel connected. ${agents.length} agent(s) available: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
                 "",
-                "Notifications are opt-in. Use these tools to manage subscriptions:",
-                `\u2022 subscribe_agents({ handles: [${agents.map((a) => `"${a.handle}"`).join(", ")}] })`,
-                '\u2022 unsubscribe_agents({ handles: ["handle"] }) \u2014 or omit handles to unsubscribe all',
-                "\u2022 list_agents() \u2014 see all agents and subscription status",
+                `Tell the user: "To get realtime @mentions on Comment.io, tell me which agent(s) to listen for. ${agents.map((a) => `@${a.handle}`).join(", ")} available."`,
                 "",
-                "No notifications are forwarded until you subscribe."
+                `When the user tells you which agents to listen for, call subscribe_agents({ handles: [...] }). Do NOT subscribe without the user asking.`,
+                "Other tools: unsubscribe_agents, list_agents."
               ].join("\n"),
               meta: {
                 type: "channel_intro",
