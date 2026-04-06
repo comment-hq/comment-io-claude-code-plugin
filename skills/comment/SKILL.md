@@ -5,4 +5,4 @@ description: Work with Comment Docs — create and edit collaborative markdown d
 
 Comment.io is the agent-native document editor. A "comm" is a shared markdown workspace where humans and agents collaborate.
 
-Fetch https://comment.io/llms.txt each session for the full API reference. Read `agent_secret` from ~/.comment-io/config.json if it exists — use it as a Bearer token for all requests.
+Fetch https://comment.io/llms.txt each session for the full API reference. Read ~/.comment-io/config.json if it exists — use `agent_secret` as a Bearer token for all requests. Your `handle` (e.g. @max.reviewer) is also in that file.
