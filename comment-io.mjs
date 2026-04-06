@@ -24436,8 +24436,8 @@ var StdioServerTransport = class {
 };
 
 // comment-io.ts
-import { readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { readFileSync, existsSync, readdirSync } from "fs";
+import { join, basename } from "path";
 import { homedir } from "os";
 
 // node_modules/ws/wrapper.mjs
@@ -24452,134 +24452,177 @@ var import_websocket_server = __toESM(require_websocket_server(), 1);
 var wrapper_default = import_websocket.default;
 
 // comment-io.ts
-var CONFIG_PATH = join(homedir(), ".comment-io", "config.json");
+var AGENTS_DIR = join(homedir(), ".comment-io", "agents");
+var LEGACY_CONFIG_PATH = join(homedir(), ".comment-io", "config.json");
 function loadConfig() {
-  const envSecret = process.env.COMMENT_IO_AGENT_SECRET ?? "";
   const baseUrl = (process.env.COMMENT_IO_BASE_URL ?? "https://comment.io").replace(/\/$/, "");
+  const agents = [];
+  const seenHandles = /* @__PURE__ */ new Set();
+  const envSecret = process.env.COMMENT_IO_AGENT_SECRET ?? "";
   if (envSecret.startsWith("as_")) {
-    return { agentSecret: envSecret, baseUrl };
+    const handle = process.env.COMMENT_IO_AGENT_HANDLE ?? "env";
+    agents.push({ handle, agentSecret: envSecret, baseUrl });
+    seenHandles.add(handle);
   }
-  if (existsSync(CONFIG_PATH)) {
+  if (existsSync(AGENTS_DIR)) {
     try {
-      const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
-      const secret = cfg.agent_secret ?? "";
-      const cfgBase = cfg.base_url?.replace(/\/$/, "") ?? "";
-      if (secret.startsWith("as_")) {
-        return { agentSecret: secret, baseUrl: cfgBase || baseUrl };
+      for (const file2 of readdirSync(AGENTS_DIR)) {
+        if (!file2.endsWith(".json")) continue;
+        const handle = basename(file2, ".json");
+        if (seenHandles.has(handle)) continue;
+        try {
+          const cfg = JSON.parse(readFileSync(join(AGENTS_DIR, file2), "utf-8"));
+          const secret = cfg.agent_secret ?? "";
+          if (secret.startsWith("as_")) {
+            agents.push({ handle, agentSecret: secret, baseUrl });
+            seenHandles.add(handle);
+          }
+        } catch {
+        }
       }
     } catch {
     }
   }
-  return null;
+  if (existsSync(LEGACY_CONFIG_PATH)) {
+    try {
+      const cfg = JSON.parse(readFileSync(LEGACY_CONFIG_PATH, "utf-8"));
+      const secret = cfg.agent_secret ?? "";
+      const handle = cfg.handle ?? "agent";
+      if (secret.startsWith("as_") && !seenHandles.has(handle)) {
+        const cfgBase = cfg.base_url?.replace(/\/$/, "") ?? "";
+        agents.push({ handle, agentSecret: secret, baseUrl: cfgBase || baseUrl });
+        seenHandles.add(handle);
+      }
+    } catch {
+    }
+  }
+  return agents;
 }
 async function main() {
-  const config2 = loadConfig();
-  if (!config2) {
-    console.error("[comment-io] No agent_secret found \u2014 running without real-time notifications.");
-    console.error("[comment-io] To register: https://comment.io/setup?platform=claude-code&step=3&identity=registered");
-    const server2 = new Server(
-      { name: "comment-io", version: "1.0.0" },
-      {
-        capabilities: {},
-        instructions: "Comment.io channel: no agent_secret configured. Real-time @mention notifications are disabled. Use the /setup skill to register, or work with docs via curl using the /comment skill."
-      }
-    );
-    const transport2 = new StdioServerTransport();
-    await server2.connect(transport2);
-    return;
-  }
-  const { agentSecret, baseUrl } = config2;
+  const agents = loadConfig();
   const server = new Server(
     { name: "comment-io", version: "1.0.0" },
-    {
+    agents.length === 0 ? {
+      capabilities: {},
+      instructions: "Comment.io channel: no agents configured. Real-time @mention notifications are disabled. Use the /setup skill to register, or work with docs via curl using the /comment skill."
+    } : {
       capabilities: {
         experimental: { "claude/channel": {} }
       },
       instructions: [
-        "Comment.io notification channel \u2014 you will receive @mention notifications in real-time.",
-        "Each notification includes: doc_slug, doc_title, notification_id, comment_id, from, and type.",
+        `Comment.io notification channel \u2014 ${agents.length} agent(s) configured: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
+        "You will receive a channel_ready message when the WebSocket connects, confirming notifications are live.",
         "When you receive a mention, use curl to read the doc and respond. See your Comment.io skill for the full API.",
-        `API reference: ${baseUrl}/llms.txt`
+        `API reference: ${agents[0].baseUrl}/llms.txt`
       ].join("\n")
     }
   );
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("[comment-io] Channel connected");
+  if (agents.length === 0) {
+    console.error("[comment-io] No agents configured \u2014 running without real-time notifications.");
+    console.error("[comment-io] To register: https://comment.io/setup?platform=claude-code&step=3&identity=registered");
+    return;
+  }
+  console.error(`[comment-io] Channel connected \u2014 ${agents.length} agent(s): ${agents.map((a) => a.handle).join(", ")}`);
   const seenIds = /* @__PURE__ */ new Set();
-  async function emitNotification(ntf) {
-    if (seenIds.has(ntf.id)) return;
-    seenIds.add(ntf.id);
-    if (seenIds.size > 1e3) {
-      const entries = [...seenIds];
-      seenIds.clear();
-      for (const id of entries.slice(-500)) seenIds.add(id);
-    }
-    await server.notification({
-      method: "notifications/claude/channel",
-      params: {
-        content: `You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
-        meta: {
-          doc_slug: ntf.doc_slug,
-          doc_title: ntf.doc_title,
-          notification_id: ntf.id,
-          comment_id: ntf.comment_id ?? "",
-          from: ntf.from_handle,
-          type: ntf.type
-        }
+  function dedupKey(handle, id) {
+    return `${handle}:${id}`;
+  }
+  function connectAgent(agent) {
+    const { handle, agentSecret, baseUrl } = agent;
+    const tag = `[comment-io:${handle}]`;
+    const wsUrl = baseUrl.replace(/^http/, "ws") + "/agents/me/notifications/connect";
+    let attempt = 0;
+    let pingInterval = null;
+    async function emitNotification(ntf) {
+      const key = dedupKey(handle, ntf.id);
+      if (seenIds.has(key)) return;
+      seenIds.add(key);
+      if (seenIds.size > 2e3) {
+        const entries = [...seenIds];
+        seenIds.clear();
+        for (const id of entries.slice(-1e3)) seenIds.add(id);
       }
-    });
-    try {
-      await fetch(`${baseUrl}/agents/me/notifications/${ntf.id}/read`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${agentSecret}`, "Content-Type": "application/json" }
+      await server.notification({
+        method: "notifications/claude/channel",
+        params: {
+          content: `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
+          meta: {
+            for_handle: handle,
+            doc_slug: ntf.doc_slug,
+            doc_title: ntf.doc_title,
+            notification_id: ntf.id,
+            comment_id: ntf.comment_id ?? "",
+            from: ntf.from_handle,
+            type: ntf.type
+          }
+        }
       });
-    } catch {
-    }
-  }
-  const wsUrl = baseUrl.replace(/^http/, "ws") + "/agents/me/notifications/connect";
-  let attempt = 0;
-  let pingInterval = null;
-  function connect() {
-    const ws = new wrapper_default(wsUrl, {
-      headers: { Authorization: `Bearer ${agentSecret}` }
-    });
-    ws.on("open", () => {
-      attempt = 0;
-      console.error("[comment-io] WebSocket connected");
-      pingInterval = setInterval(() => {
-        if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify({ type: "ping" }));
-      }, 3e4);
-    });
-    ws.on("message", async (data) => {
       try {
-        const msg = JSON.parse(data.toString());
-        if (msg.type === "notification_catchup") {
-          for (const ntf of msg.notifications) await emitNotification(ntf);
-        } else if (msg.type === "notification_appended") {
-          await emitNotification(msg.notification);
-        }
-      } catch (err) {
-        console.error("[comment-io] WS message error:", err instanceof Error ? err.message : err);
+        await fetch(`${baseUrl}/agents/me/notifications/${ntf.id}/read`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${agentSecret}`, "Content-Type": "application/json" }
+        });
+      } catch {
       }
-    });
-    ws.on("close", (code, reason) => {
-      if (pingInterval) clearInterval(pingInterval);
-      pingInterval = null;
-      console.error(`[comment-io] WebSocket closed: ${code} ${reason.toString()}`);
-      scheduleReconnect();
-    });
-    ws.on("error", (err) => {
-      console.error("[comment-io] WebSocket error:", err.message);
-    });
+    }
+    function connect() {
+      const ws = new wrapper_default(wsUrl, {
+        headers: { Authorization: `Bearer ${agentSecret}` }
+      });
+      ws.on("open", async () => {
+        attempt = 0;
+        console.error(`${tag} WebSocket connected`);
+        await server.notification({
+          method: "notifications/claude/channel",
+          params: {
+            content: [
+              `Comment.io notification channel is active for @${handle}.`,
+              `@mention notifications will be pushed to you automatically \u2014 do NOT poll, use SSE, or run a curl loop.`,
+              `When you receive a notification, use your agent_secret (from ~/.comment-io/config.json or ~/.comment-io/agents/${handle}.json) as a Bearer token to read the doc and respond.`,
+              `API reference: ${baseUrl}/llms.txt`
+            ].join(" "),
+            meta: { type: "channel_ready", for_handle: handle }
+          }
+        });
+        pingInterval = setInterval(() => {
+          if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+        }, 3e4);
+      });
+      ws.on("message", async (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === "notification_catchup") {
+            for (const ntf of msg.notifications) await emitNotification(ntf);
+          } else if (msg.type === "notification_appended") {
+            await emitNotification(msg.notification);
+          }
+        } catch (err) {
+          console.error(`${tag} WS message error:`, err instanceof Error ? err.message : err);
+        }
+      });
+      ws.on("close", (code, reason) => {
+        if (pingInterval) clearInterval(pingInterval);
+        pingInterval = null;
+        console.error(`${tag} WebSocket closed: ${code} ${reason.toString()}`);
+        scheduleReconnect();
+      });
+      ws.on("error", (err) => {
+        console.error(`${tag} WebSocket error:`, err.message);
+      });
+    }
+    function scheduleReconnect() {
+      const delay = Math.min(1e3 * Math.pow(2, attempt), 6e4) + Math.random() * 1e3;
+      attempt++;
+      console.error(`${tag} Reconnecting in ${Math.round(delay)}ms (attempt ${attempt})`);
+      setTimeout(connect, delay);
+    }
+    connect();
   }
-  function scheduleReconnect() {
-    const delay = Math.min(1e3 * Math.pow(2, attempt), 6e4) + Math.random() * 1e3;
-    attempt++;
-    console.error(`[comment-io] Reconnecting in ${Math.round(delay)}ms (attempt ${attempt})`);
-    setTimeout(connect, delay);
+  for (const agent of agents) {
+    connectAgent(agent);
   }
-  connect();
 }
 main().catch((err) => {
   console.error("[comment-io] Fatal:", err);

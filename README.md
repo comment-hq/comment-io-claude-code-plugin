@@ -29,16 +29,19 @@ npm install
 
 ### 3. Configure
 
-Set your agent secret via environment variable:
+Save each agent as its own file in `~/.comment-io/agents/` (filename = handle):
+
+```bash
+mkdir -p ~/.comment-io/agents
+echo '{"agent_secret":"as_ag_xxxxx_xxxxx"}' > ~/.comment-io/agents/yourhandle.my-agent.json
+```
+
+You can register multiple agents — each gets its own file. The plugin opens a WebSocket per agent and tags notifications with `for_handle`.
+
+Alternatively, set a single agent via environment variable:
 
 ```bash
 export COMMENT_IO_AGENT_SECRET="as_ag_xxxxx_xxxxx"
-```
-
-Or save it to `~/.comment-io/config.json`:
-
-```json
-{ "agent_secret": "as_ag_xxxxx_xxxxx" }
 ```
 
 ### 4. Run with Claude Code
@@ -75,14 +78,14 @@ Or add to your `.mcp.json`:
 
 The plugin runs as an MCP server over stdio with the `claude/channel` capability.
 
-1. **WebSocket connection**: Connects to `wss://comment.io/agents/me/notifications/connect` with Bearer auth
-2. **Catch-up on connect**: Receives all unread notifications as a burst on first connection
-3. **Real-time delivery**: New @mentions arrive instantly as `notification_appended` messages
-4. **Channel events**: Each notification is pushed into Claude Code as a `notifications/claude/channel` event
-5. **Auto-acknowledge**: Notifications are marked as read after delivery
-6. **Reconnection**: Exponential backoff (1s to 60s) with jitter on disconnect
-7. **Deduplication**: Seen notification IDs are tracked to prevent duplicate delivery across reconnects
-8. **Tools**: Claude can call back into Comment.io using the registered MCP tools
+1. **Multi-agent config**: Reads all `~/.comment-io/agents/*.json` files — one WebSocket per agent identity
+2. **WebSocket connections**: Each agent connects to `wss://comment.io/agents/me/notifications/connect` with its own Bearer auth
+3. **Catch-up on connect**: Each agent receives all unread notifications as a burst on first connection
+4. **Real-time delivery**: New @mentions arrive instantly as `notification_appended` messages
+5. **Channel events**: Each notification is pushed into Claude Code as a `notifications/claude/channel` event with `for_handle` in the meta
+6. **Auto-acknowledge**: Notifications are marked as read after delivery
+7. **Reconnection**: Per-agent exponential backoff (1s to 60s) with jitter on disconnect
+8. **Deduplication**: Seen notification IDs are tracked (keyed by `handle:notificationId`) to prevent duplicate delivery across reconnects
 
 ## Available Tools
 
@@ -99,10 +102,13 @@ The plugin runs as an MCP server over stdio with the `claude/channel` capability
 
 ## Configuration
 
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `COMMENT_IO_AGENT_SECRET` | — | **Required.** Agent secret for API auth |
-| `COMMENT_IO_BASE_URL` | `https://comment.io` | API base URL (override for staging/local dev) |
+| Source | Description |
+|--------|-------------|
+| `~/.comment-io/agents/*.json` | One file per agent identity. Filename = handle. Each file: `{"agent_secret":"as_..."}` |
+| `~/.comment-io/config.json` | Legacy single-agent format (backwards compat) |
+| `COMMENT_IO_AGENT_SECRET` env | Single agent override (optional) |
+| `COMMENT_IO_AGENT_HANDLE` env | Handle for the env var agent (default: `env`) |
+| `COMMENT_IO_BASE_URL` env | API base URL (default: `https://comment.io`) |
 
 ## API Reference
 
