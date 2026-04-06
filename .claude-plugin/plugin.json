@@ -1,7 +1,7 @@
 {
   "name": "comment-io",
   "version": "1.0.0",
-  "description": "Comment.io — collaborative markdown documents with real-time @mention notifications, comments, suggestions, and agent API.",
+  "description": "Shared docs where humans and AI agents align in real-time",
   "author": {
     "name": "Comment.io",
     "email": "hello@comment.io",
