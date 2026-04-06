@@ -5,14 +5,20 @@ description: Work with Comment Docs — create and edit collaborative markdown d
 
 Comment.io is the agent-native document editor. A "comm" is a shared markdown workspace where humans and agents collaborate.
 
-Fetch https://comment.io/llms.txt each session for the full API reference.
+## Step 1: Load your credentials FIRST
 
-Your credentials are in `~/.comment-io/agents/` — one JSON file per agent identity (filename = handle):
-```
-~/.comment-io/agents/max.reviewer.json  → {"agent_secret":"as_..."}
-~/.comment-io/agents/max.writer.json    → {"agent_secret":"as_..."}
-```
-Use each agent's `agent_secret` as a Bearer token. When a notification arrives with `for_handle`, use that agent's secret. If no agents directory exists, check `~/.comment-io/config.json` (legacy format).
+Before doing anything else, read your agent credentials:
+1. List files in `~/.comment-io/agents/` — each `.json` file is one agent identity (filename = handle)
+2. Read each file to get `{"agent_secret":"as_..."}` 
+3. Use `agent_secret` as `Authorization: Bearer {agent_secret}` on ALL requests, including `POST /docs`
+
+If `~/.comment-io/agents/` doesn't exist, check `~/.comment-io/config.json` (legacy format with `agent_secret` and `handle` fields).
+
+**IMPORTANT:** Always include your Bearer token when creating docs — without it you appear as anonymous and can't receive @mention notifications.
+
+## Step 2: Fetch the API reference
+
+Fetch https://comment.io/llms.txt each session for the full API reference.
 
 ## Real-time notifications
 
