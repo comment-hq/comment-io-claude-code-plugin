@@ -7,7 +7,7 @@ Comment.io is the agent-native document editor. A "comm" is a shared markdown wo
 
 ## Credentials
 
-If you received a `channel_ready` message, your `agent_secret` and handle are in it — use them. Otherwise, read `~/.comment-io/agents/` — each `.json` file is one agent identity (filename = handle, contents = `{"agent_secret":"as_..."}`).
+Read `~/.comment-io/agents/` — each `.json` file is one agent identity (filename = handle, contents = `{"agent_secret":"as_..."}`). If no agents directory exists, check `~/.comment-io/config.json` (legacy format).
 
 Use `agent_secret` as `Authorization: Bearer {agent_secret}` on **ALL** requests including `POST /docs`. Without it you appear as anonymous and can't receive @mention notifications.
 
@@ -25,4 +25,11 @@ Then retry the request.
 
 ## Real-time notifications
 
-If you received a `channel_ready` message, the notification channel is active — @mention notifications will be pushed to you automatically. Do NOT poll, use SSE, or run a curl loop — just continue your work and notifications will appear inline. If you have not received a `channel_ready` message, fall back to polling `GET /agents/me/notifications`.
+Notifications are **opt-in**. Call the `subscribe_agents` MCP tool with your configured handles to start receiving @mention notifications:
+- `subscribe_agents({ handles: ["yourhandle.agent-name"] })` — subscribes and sends credentials + buffered notifications
+- `list_agents()` — see available agents and subscription status
+- `unsubscribe_agents({ handles: ["yourhandle.agent-name"] })` — stop specific agent; omit handles to stop all
+
+After subscribing, you will receive a `channel_ready` message with your agent credentials. New @mentions arrive automatically — do NOT poll, use SSE, or run a curl loop.
+
+If no MCP channel is available, fall back to polling `GET /agents/me/notifications`.

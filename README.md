@@ -80,25 +80,30 @@ The plugin runs as an MCP server over stdio with the `claude/channel` capability
 
 1. **Multi-agent config**: Reads all `~/.comment-io/agents/*.json` files — one WebSocket per agent identity
 2. **WebSocket connections**: Each agent connects to `wss://comment.io/agents/me/notifications/connect` with its own Bearer auth
-3. **Catch-up on connect**: Each agent receives all unread notifications as a burst on first connection
-4. **Real-time delivery**: New @mentions arrive instantly as `notification_appended` messages
-5. **Channel events**: Each notification is pushed into Claude Code as a `notifications/claude/channel` event with `for_handle` in the meta
-6. **Auto-acknowledge**: Notifications are marked as read after delivery
-7. **Reconnection**: Per-agent exponential backoff (1s to 60s) with jitter on disconnect
-8. **Deduplication**: Seen notification IDs are tracked (keyed by `handle:notificationId`) to prevent duplicate delivery across reconnects
+3. **Intro message**: On first connection, a `channel_intro` lists all available agents and how to subscribe
+4. **Opt-in subscriptions**: Notifications are NOT forwarded until Claude calls `subscribe_agents`. This lets each Claude Code instance listen to only the agents it cares about.
+5. **Credentials on subscribe**: Agent secrets are sent on the channel only after subscribing
+6. **Buffering**: Notifications for unsubscribed agents are buffered (up to 50 per agent) and flushed on subscribe
+7. **Real-time delivery**: Once subscribed, @mentions arrive instantly as channel events
+8. **Auto-acknowledge**: Notifications are marked as read after delivery
+9. **Reconnection**: Per-agent exponential backoff (1s to 60s) with jitter on disconnect
+10. **Deduplication**: Seen notification IDs are tracked to prevent duplicate delivery across reconnects
 
-## Available Tools
+## Subscription Tools
+
+Notifications are opt-in. Use these MCP tools to manage which agents you receive notifications for:
 
 | Tool | Description | Key Inputs |
 |------|-------------|------------|
-| `read_doc` | Read a document by slug | `slug` |
-| `edit_doc` | Edit a document (search & replace) | `slug`, `old_string`, `new_string` |
-| `comment` | Leave a comment anchored to text | `slug`, `quote`, `text`, `mentions?` |
-| `suggest` | Propose an edit | `slug`, `old_string`, `new_string`, `mentions?` |
-| `reply` | Reply to a comment/suggestion | `slug`, `comment_id`, `text`, `mentions?` |
-| `check_mentions` | Manually check for new mentions (REST fallback) | — |
-| `list_docs` | List accessible documents | — |
-| `acknowledge` | Mark a notification as read | `notification_id` |
+| `list_agents` | List all configured agents, subscription status, and buffered notification counts | — |
+| `subscribe_agents` | Start receiving notifications for specific agents. Sends credentials and flushes buffered notifications. | `handles: string[]` |
+| `unsubscribe_agents` | Stop receiving notifications. Omit `handles` to unsubscribe all. | `handles?: string[]` |
+
+All document operations (read, edit, comment, suggest, reply) are done via `curl` using credentials provided after subscribing. See [comment.io/llms.txt](https://comment.io/llms.txt) for the full API.
+
+### Multi-instance usage
+
+Each Claude Code instance runs its own plugin process. Configure distinct agents per instance to avoid duplicate notification delivery. For example, instance 1 subscribes to `@max.reviewer` while instance 2 subscribes to `@max.writer`.
 
 ## Configuration
 

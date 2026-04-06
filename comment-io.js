@@ -24502,16 +24502,133 @@ async function main() {
       instructions: "Comment.io channel: no agents configured. Real-time @mention notifications are disabled. Use the /setup skill to register, or work with docs via curl using the /comment skill."
     } : {
       capabilities: {
+        tools: {},
         experimental: { "claude/channel": {} }
       },
       instructions: [
-        `Comment.io notification channel \u2014 ${agents.length} agent(s) configured: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
-        "You will receive a channel_ready message when the WebSocket connects, confirming notifications are live.",
+        `Comment.io notification channel \u2014 ${agents.length} agent(s) available: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
+        "Notifications are opt-in. Use subscribe_agents to start receiving @mention notifications.",
         "When you receive a mention, use curl to read the doc and respond. See your Comment.io skill for the full API.",
         `API reference: ${agents[0].baseUrl}/llms.txt`
       ].join("\n")
     }
   );
+  const subscribedHandles = /* @__PURE__ */ new Set();
+  const pendingQueues = /* @__PURE__ */ new Map();
+  const PENDING_QUEUE_MAX = 50;
+  let introSent = false;
+  async function sendCredentials(agent) {
+    await server.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: [
+          `Comment.io channel active for @${agent.handle}.`,
+          `Your agent_secret: ${agent.agentSecret}`,
+          `Use as: Authorization: Bearer ${agent.agentSecret}`,
+          `Include this Bearer token on ALL requests including POST /docs \u2014 without it you appear as anonymous.`,
+          `Subscribed \u2014 @mention notifications arrive on the channel. Do NOT poll.`,
+          `API reference: ${agent.baseUrl}/llms.txt`
+        ].join("\n"),
+        meta: { type: "channel_ready", for_handle: agent.handle, agent_secret: agent.agentSecret }
+      }
+    });
+  }
+  if (agents.length > 0) {
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        {
+          name: "list_agents",
+          description: "List all configured Comment.io agents, their subscription status, and how many notifications are buffered.",
+          inputSchema: { type: "object", properties: {} }
+        },
+        {
+          name: "subscribe_agents",
+          description: "Subscribe to @mention notifications for one or more agents. Credentials and any buffered notifications are sent on the channel after subscribing.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              handles: {
+                type: "array",
+                items: { type: "string" },
+                description: 'Agent handles to subscribe to, e.g. ["max.reviewer"]'
+              }
+            },
+            required: ["handles"]
+          }
+        },
+        {
+          name: "unsubscribe_agents",
+          description: "Unsubscribe from notifications for specific agents, or all agents if handles is omitted.",
+          inputSchema: {
+            type: "object",
+            properties: {
+              handles: {
+                type: "array",
+                items: { type: "string" },
+                description: "Agent handles to unsubscribe from. Omit to unsubscribe all."
+              }
+            }
+          }
+        }
+      ]
+    }));
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+      if (name === "list_agents") {
+        const rows = agents.map((a) => ({
+          handle: a.handle,
+          subscribed: subscribedHandles.has(a.handle),
+          buffered: pendingQueues.get(a.handle)?.length ?? 0
+        }));
+        return { content: [{ type: "text", text: JSON.stringify(rows, null, 2) }] };
+      }
+      if (name === "subscribe_agents") {
+        const raw = args?.handles ?? [];
+        const normalized = raw.map((h) => h.replace(/^@/, "").toLowerCase());
+        const valid = normalized.filter((h) => agents.some((a) => a.handle.toLowerCase() === h));
+        const unknown2 = normalized.filter((h) => !agents.some((a) => a.handle.toLowerCase() === h));
+        const added = [];
+        for (const h of valid) {
+          const agent = agents.find((a) => a.handle.toLowerCase() === h);
+          if (!subscribedHandles.has(agent.handle)) {
+            subscribedHandles.add(agent.handle);
+            added.push(agent.handle);
+            await sendCredentials(agent);
+            const pending = pendingQueues.get(agent.handle) ?? [];
+            pendingQueues.delete(agent.handle);
+            for (const ntf of pending) await emitNotification(agent.handle, agent, ntf);
+          }
+        }
+        const already = valid.map((h) => agents.find((a) => a.handle.toLowerCase() === h).handle).filter((h) => !added.includes(h));
+        let msg = "";
+        if (added.length > 0) msg += `Subscribed to ${added.map((h) => `@${h}`).join(", ")}. `;
+        if (already.length > 0) msg += `Already subscribed: ${already.map((h) => `@${h}`).join(", ")}. `;
+        if (unknown2.length > 0) msg += `Unknown: ${unknown2.map((h) => `@${h}`).join(", ")}.`;
+        return { content: [{ type: "text", text: msg.trim() || "No changes." }] };
+      }
+      if (name === "unsubscribe_agents") {
+        const rawHandles = args?.handles;
+        if (!Array.isArray(rawHandles)) {
+          const count = subscribedHandles.size;
+          subscribedHandles.clear();
+          return { content: [{ type: "text", text: count > 0 ? "Unsubscribed from all agents." : "No active subscriptions." }] };
+        }
+        const normalized = rawHandles.map((h) => h.replace(/^@/, "").toLowerCase());
+        const removed = [];
+        for (const h of normalized) {
+          const agent = agents.find((a) => a.handle.toLowerCase() === h);
+          if (agent && subscribedHandles.delete(agent.handle)) removed.push(agent.handle);
+        }
+        return {
+          content: [{
+            type: "text",
+            text: removed.length > 0 ? `Unsubscribed from ${removed.map((h) => `@${h}`).join(", ")}.` : "No matching subscriptions found."
+          }]
+        };
+      }
+      throw new Error(`Unknown tool: ${name}`);
+    });
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
   if (agents.length === 0) {
@@ -24524,63 +24641,79 @@ async function main() {
   function dedupKey(handle, id) {
     return `${handle}:${id}`;
   }
+  async function emitNotification(handle, agent, ntf) {
+    if (!subscribedHandles.has(handle)) {
+      const q = pendingQueues.get(handle) ?? [];
+      if (q.some((n) => n.id === ntf.id)) return;
+      if (q.length >= PENDING_QUEUE_MAX) q.shift();
+      q.push(ntf);
+      pendingQueues.set(handle, q);
+      return;
+    }
+    const key = dedupKey(handle, ntf.id);
+    if (seenIds.has(key)) return;
+    seenIds.add(key);
+    if (seenIds.size > 2e3) {
+      const entries = [...seenIds];
+      seenIds.clear();
+      for (const id of entries.slice(-1e3)) seenIds.add(id);
+    }
+    await server.notification({
+      method: "notifications/claude/channel",
+      params: {
+        content: `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
+        meta: {
+          for_handle: handle,
+          doc_slug: ntf.doc_slug,
+          doc_title: ntf.doc_title,
+          notification_id: ntf.id,
+          comment_id: ntf.comment_id ?? "",
+          from: ntf.from_handle,
+          type: ntf.type
+        }
+      }
+    });
+    try {
+      await fetch(`${agent.baseUrl}/agents/me/notifications/${ntf.id}/read`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${agent.agentSecret}`, "Content-Type": "application/json" }
+      });
+    } catch {
+    }
+  }
   function connectAgent(agent) {
-    const { handle, agentSecret, baseUrl } = agent;
+    const { handle, baseUrl, agentSecret } = agent;
     const tag = `[comment-io:${handle}]`;
     const wsUrl = baseUrl.replace(/^http/, "ws") + `/agents/me/notifications/connect?token=${encodeURIComponent(agentSecret)}`;
     let attempt = 0;
     let pingInterval = null;
-    async function emitNotification(ntf) {
-      const key = dedupKey(handle, ntf.id);
-      if (seenIds.has(key)) return;
-      seenIds.add(key);
-      if (seenIds.size > 2e3) {
-        const entries = [...seenIds];
-        seenIds.clear();
-        for (const id of entries.slice(-1e3)) seenIds.add(id);
-      }
-      await server.notification({
-        method: "notifications/claude/channel",
-        params: {
-          content: `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
-          meta: {
-            for_handle: handle,
-            doc_slug: ntf.doc_slug,
-            doc_title: ntf.doc_title,
-            notification_id: ntf.id,
-            comment_id: ntf.comment_id ?? "",
-            from: ntf.from_handle,
-            type: ntf.type
-          }
-        }
-      });
-      try {
-        await fetch(`${baseUrl}/agents/me/notifications/${ntf.id}/read`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${agentSecret}`, "Content-Type": "application/json" }
-        });
-      } catch {
-      }
-    }
     function connect() {
       const ws = new wrapper_default(wsUrl);
       ws.on("open", async () => {
         attempt = 0;
         console.error(`${tag} WebSocket connected`);
-        await server.notification({
-          method: "notifications/claude/channel",
-          params: {
-            content: [
-              `Comment.io notification channel is active for @${handle}.`,
-              `Your agent_secret: ${agentSecret}`,
-              `Use as: Authorization: Bearer ${agentSecret}`,
-              `Include this Bearer token on ALL requests including POST /docs \u2014 without it you appear as anonymous.`,
-              `@mention notifications will be pushed to you automatically \u2014 do NOT poll, use SSE, or run a curl loop.`,
-              `API reference: ${baseUrl}/llms.txt`
-            ].join("\n"),
-            meta: { type: "channel_ready", for_handle: handle, agent_secret: agentSecret }
-          }
-        });
+        if (!introSent) {
+          introSent = true;
+          await server.notification({
+            method: "notifications/claude/channel",
+            params: {
+              content: [
+                `Comment.io notification channel \u2014 ${agents.length} agent(s) available: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
+                "",
+                "Notifications are opt-in. Use these tools to manage subscriptions:",
+                `\u2022 subscribe_agents({ handles: [${agents.map((a) => `"${a.handle}"`).join(", ")}] })`,
+                '\u2022 unsubscribe_agents({ handles: ["handle"] }) \u2014 or omit handles to unsubscribe all',
+                "\u2022 list_agents() \u2014 see all agents and subscription status",
+                "",
+                "No notifications are forwarded until you subscribe."
+              ].join("\n"),
+              meta: {
+                type: "channel_intro",
+                available_agents: agents.map((a) => a.handle)
+              }
+            }
+          });
+        }
         pingInterval = setInterval(() => {
           if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify({ type: "ping" }));
         }, 3e4);
@@ -24589,9 +24722,22 @@ async function main() {
         try {
           const msg = JSON.parse(data.toString());
           if (msg.type === "notification_catchup") {
-            for (const ntf of msg.notifications) await emitNotification(ntf);
+            for (const ntf of msg.notifications) await emitNotification(handle, agent, ntf);
           } else if (msg.type === "notification_appended") {
-            await emitNotification(msg.notification);
+            await emitNotification(handle, agent, msg.notification);
+          } else if (msg.type === "notification_read") {
+            const id = msg.id;
+            seenIds.delete(dedupKey(handle, id));
+            const q = pendingQueues.get(handle);
+            if (q) {
+              const filtered = q.filter((n) => n.id !== id);
+              if (filtered.length !== q.length) pendingQueues.set(handle, filtered);
+            }
+          } else if (msg.type === "notifications_all_read") {
+            pendingQueues.delete(handle);
+            for (const key of [...seenIds]) {
+              if (key.startsWith(`${handle}:`)) seenIds.delete(key);
+            }
           }
         } catch (err) {
           console.error(`${tag} WS message error:`, err instanceof Error ? err.message : err);
