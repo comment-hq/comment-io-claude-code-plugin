@@ -24579,11 +24579,13 @@ async function main() {
           params: {
             content: [
               `Comment.io notification channel is active for @${handle}.`,
+              `Your agent_secret: ${agentSecret}`,
+              `Use as: Authorization: Bearer ${agentSecret}`,
+              `Include this Bearer token on ALL requests including POST /docs \u2014 without it you appear as anonymous.`,
               `@mention notifications will be pushed to you automatically \u2014 do NOT poll, use SSE, or run a curl loop.`,
-              `When you receive a notification, use your agent_secret (from ~/.comment-io/config.json or ~/.comment-io/agents/${handle}.json) as a Bearer token to read the doc and respond.`,
               `API reference: ${baseUrl}/llms.txt`
-            ].join(" "),
-            meta: { type: "channel_ready", for_handle: handle }
+            ].join("\n"),
+            meta: { type: "channel_ready", for_handle: handle, agent_secret: agentSecret }
           }
         });
         pingInterval = setInterval(() => {
