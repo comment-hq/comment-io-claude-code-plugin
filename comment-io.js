@@ -25246,6 +25246,7 @@ async function main() {
         console.error(`${tag} WebSocket connected`);
         if (!introSent) {
           introSent = true;
+          console.error(`${tag} Sending channel_ready intro to Claude Code`);
           await server.notification({
             method: "notifications/claude/channel",
             params: {
@@ -25256,6 +25257,9 @@ async function main() {
               }
             }
           });
+          console.error(`${tag} channel_ready sent`);
+        } else {
+          console.error(`${tag} Skipping channel_ready (already sent by another agent)`);
         }
         ws.send(JSON.stringify({ type: "ping" }));
         pingInterval = setInterval(() => {
