@@ -25257,6 +25257,7 @@ async function main() {
             }
           });
         }
+        ws.send(JSON.stringify({ type: "ping" }));
         pingInterval = setInterval(() => {
           if (ws.readyState === wrapper_default.OPEN) ws.send(JSON.stringify({ type: "ping" }));
         }, 3e4);
