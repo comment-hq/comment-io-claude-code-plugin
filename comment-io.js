@@ -24649,12 +24649,6 @@ function apiReference(baseUrl, slug, token, sid) {
     `\`\`\``,
     `Max 5 images per feedback, 5 MB each. Formats: PNG, JPEG, WebP, GIF.`,
     ``,
-    `### Stream events (SSE)`,
-    `\`\`\`bash`,
-    `curl -s -H "Authorization: Bearer ${token}"${skillH} "${api}/events"`,
-    `\`\`\``,
-    `Server-Sent Events stream of edits, comments, suggestions, and cursor movements. Supports \`Last-Event-ID\` for replay.`,
-    ``,
     `### Delete doc`,
     `\`\`\`bash`,
     `curl -s -X DELETE "${api}" -H "Authorization: Bearer {owner_secret}"`,
@@ -24681,7 +24675,6 @@ function apiReference(baseUrl, slug, token, sid) {
     `| POST | /docs/:slug/feedback | viewer+ | Report feedback (bug, friction, wish) |`,
     `| POST | /docs/:slug/feedback/images | viewer+ | Upload feedback screenshot (raw binary) |`,
     `| POST | /docs/:slug/access | owner | Create access token or invite by @handle |`,
-    `| GET | /docs/:slug/events | viewer+ | SSE event stream |`,
     ``,
     ``,
     `## Error recovery`,
@@ -24776,7 +24769,6 @@ function buildHomeDocs(baseUrl = "https://comment.io", sid) {
     `  "access_token_role": "editor",`,
     `  "url": "/docs/abc123",`,
     `  "api_url": "/docs/abc123",`,
-    `  "events_url": "/docs/abc123/events?token=...",`,
     `  "share_url": "/d/abc123?token=..."`,
     `}`,
     `\`\`\``,
@@ -24970,12 +24962,6 @@ function buildHomeDocs(baseUrl = "https://comment.io", sid) {
     `- Compare the \`revision\` number to your last known value to detect edits`,
     `- Check the \`last_nudge\` field \u2014 non-null means a human has requested a review since your last read`,
     `- Reading the doc automatically acknowledges the review request`,
-    ``,
-    `For real-time updates, connect to the SSE stream:`,
-    `\`\`\`bash`,
-    `curl -N "${baseUrl}/docs/{slug}/events?token={token}"`,
-    `\`\`\``,
-    `Events: \`edit\`, \`comment\`, \`suggestion\`, \`review_requested\`, \`presence\``,
     ``,
     `### Webhooks (push notifications \u2014 needs a public URL)`,
     ``,
@@ -25227,7 +25213,7 @@ async function main() {
     await server.notification({
       method: "notifications/claude/channel",
       params: {
-        content: `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
+        content: ntf.type === "review_requested" ? `[@${handle}] Review requested in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}` : `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
         meta: {
           for_handle: handle,
           doc_slug: ntf.doc_slug,
@@ -25284,7 +25270,6 @@ async function main() {
             await emitNotification(handle, agent, msg.notification);
           } else if (msg.type === "notification_read") {
             const id = msg.id;
-            seenIds.delete(dedupKey(handle, id));
             const q = pendingQueues.get(handle);
             if (q) {
               const filtered = q.filter((n) => n.id !== id);
@@ -25292,9 +25277,6 @@ async function main() {
             }
           } else if (msg.type === "notifications_all_read") {
             pendingQueues.delete(handle);
-            for (const key of [...seenIds]) {
-              if (key.startsWith(`${handle}:`)) seenIds.delete(key);
-            }
           }
         } catch (err) {
           console.error(`${tag} WS message error:`, err instanceof Error ? err.message : err);

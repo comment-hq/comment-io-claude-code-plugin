@@ -25232,7 +25232,7 @@ async function main() {
     await server.notification({
       method: "notifications/claude/channel",
       params: {
-        content: `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
+        content: ntf.type === "review_requested" ? `[@${handle}] Review requested in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}` : `[@${handle}] You were @mentioned in "${ntf.doc_title}" by ${ntf.from_name}: ${ntf.context}`,
         meta: {
           for_handle: handle,
           doc_slug: ntf.doc_slug,
@@ -25289,7 +25289,6 @@ async function main() {
             await emitNotification(handle, agent, msg.notification);
           } else if (msg.type === "notification_read") {
             const id = msg.id;
-            seenIds.delete(dedupKey(handle, id));
             const q = pendingQueues.get(handle);
             if (q) {
               const filtered = q.filter((n) => n.id !== id);
@@ -25297,9 +25296,6 @@ async function main() {
             }
           } else if (msg.type === "notifications_all_read") {
             pendingQueues.delete(handle);
-            for (const key of [...seenIds]) {
-              if (key.startsWith(`${handle}:`)) seenIds.delete(key);
-            }
           }
         } catch (err) {
           console.error(`${tag} WS message error:`, err instanceof Error ? err.message : err);
