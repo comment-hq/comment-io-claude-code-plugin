@@ -24698,17 +24698,10 @@ async function main() {
           await server.notification({
             method: "notifications/claude/channel",
             params: {
-              content: [
-                `Comment.io notification channel connected. ${agents.length} agent(s) available: ${agents.map((a) => `@${a.handle}`).join(", ")}.`,
-                "",
-                `Tell the user: "To get realtime @mentions on Comment.io, tell me which agent(s) to listen for. ${agents.map((a) => `@${a.handle}`).join(", ")} available."`,
-                "",
-                `When the user tells you which agents to listen for, call subscribe_agents({ handles: [...] }). Do NOT subscribe without the user asking.`,
-                "Other tools: unsubscribe_agents, list_agents."
-              ].join("\n"),
+              content: `To get realtime @mentions on Comment.io, tell me which agent(s) to listen for. ${agents.map((a) => `@${a.handle}`).join(", ")} available.`,
               meta: {
-                type: "channel_intro",
-                available_agents: agents.map((a) => a.handle)
+                type: "channel_ready",
+                for_handle: handle
               }
             }
           });
