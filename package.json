@@ -1,6 +1,6 @@
 {
   "name": "@comment-io/claude-code-plugin",
-  "version": "1.0.42",
+  "version": "1.0.43",
   "private": true,
   "description": "Comment.io plugin for Claude Code",
   "scripts": {
