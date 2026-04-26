@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "comment-io": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/comment-io.js"]
-    }
-  }
-}
