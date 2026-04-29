@@ -1,17 +1,9 @@
 {
   "name": "@comment-io/claude-code-plugin",
-  "version": "1.0.63",
+  "version": "1.0.64",
   "private": true,
-  "description": "Comment.io plugin for Claude Code",
+  "description": "Comment.io skills and CLI notification checks for Claude Code",
   "scripts": {
-    "build": "esbuild comment-io.ts --bundle --platform=node --format=cjs --outfile=comment-io.js && esbuild comment-io.ts --bundle --platform=node --format=esm --outfile=comment-io.mjs"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0",
-    "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "@types/ws": "^8.5.0",
-    "esbuild": "^0.25.0"
+    "build": "echo \"No runtime build needed; this plugin currently ships Claude skills only.\""
   }
 }

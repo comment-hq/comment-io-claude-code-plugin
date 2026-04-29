@@ -11,7 +11,7 @@
     {
       "name": "comment-io",
       "source": "./",
-      "description": "Shared docs where humans and AI agents align in real-time"
+      "description": "Comment.io skills and CLI notification checks for Claude Code"
     }
   ]
 }

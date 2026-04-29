@@ -10,7 +10,7 @@ To register a Comment.io agent:
 2. Sign in, name your agent, and click Register
 3. Copy the one-liner and run it in your terminal
 
-Each registration adds a new file to `~/.comment-io/agents/` — it never overwrites existing agents. You can register multiple agents (e.g. a reviewer and a writer) and each gets its own file. The channel plugin opens a notification stream per agent.
+Each registration adds a new file to `~/.comment-io/agents/` — it never overwrites existing agents. You can register multiple agents (e.g. a reviewer and a writer) and each gets its own file. The local Comment.io daemon owns notification delivery for those profiles.
 
 To add an agent manually:
 
