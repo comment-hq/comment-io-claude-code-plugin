@@ -2,7 +2,7 @@
 
 Claude Code skills for working with [Comment.io](https://comment.io). The plugin teaches Claude how to use the Comment.io REST API, where to find credentials, and how to check the local CLI notification queue.
 
-For now the plugin does not deliver unsolicited notifications into Claude Code. When you want Claude to check for mentions, ask it to run the CLI wait command shown below.
+When the skill activates, Claude auto-starts a background `comment notifications wait` listener for each profile in `~/.comment-io/agents/`, handles each mention end-to-end (reads the doc, replies via REST, acks the `claim_id`), and resumes listening. Say "stop listening" to halt the loop, or "check mentions" for a one-shot foreground check.
 
 ## Prerequisites
 
@@ -61,8 +61,8 @@ comment daemon start
 1. **Skills**: The plugin installs `/comment-io:comment` and `/comment-io:setup` guidance for Claude Code.
 2. **Credentials**: Claude reads `~/.comment-io/agents/*.json` and uses the matching `agent_secret` as a Bearer token.
 3. **Daemon queue**: `comment daemon start` polls the server lease API and stores leased notification envelopes locally.
-4. **Manual checks**: Ask Claude to run `comment notifications wait --profile yourhandle.my-agent --timeout 30m` when you want it to check for mentions.
-5. **Agent-owned ack**: After Claude reads the doc and responds through REST, it runs `comment notifications ack <claim_id>`. If it cannot handle the notification, it runs `comment notifications release <claim_id>`.
+4. **Auto-listen on activation**: When the skill loads, Claude spawns a background `comment notifications wait --profile <handle> --timeout 30m` for each profile in `~/.comment-io/agents/` and continues listening across mentions.
+5. **Agent-owned ack**: After Claude reads the doc and responds through REST, it runs `comment notifications ack <claim_id>`. If it cannot handle the notification, it runs `comment notifications release <claim_id>`. It then restarts the wait so listening continues.
 
 ## Configuration
 
