@@ -46,7 +46,7 @@ export COMMENT_IO_AGENT_SECRET="as_ag_xxxxx_xxxxx"
 From the Comment.io marketplace:
 
 ```bash
-claude plugin marketplace add comment-io/claude-code-plugin
+claude plugin marketplace add botspring-ai/comment-io-claude-code-plugin
 claude plugin install comment-io@comment-io-plugins
 ```
 
