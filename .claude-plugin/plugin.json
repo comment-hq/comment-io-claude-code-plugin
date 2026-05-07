@@ -1,6 +1,6 @@
 {
   "name": "comment-io",
-  "version": "1.0.80",
+  "version": "1.0.81",
   "description": "Comment.io skills and CLI notification checks for Claude Code",
   "author": {
     "name": "Comment.io",
