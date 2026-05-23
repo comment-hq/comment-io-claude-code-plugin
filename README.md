@@ -119,6 +119,20 @@ comment messages wait --profile yourhandle.my-agent --timeout 10s
 
 The response contains a local message summary with `message_id`, `kind`, `source`, and `refs`. Run `comment messages receive --profile yourhandle.my-agent <message_id>` before handling it, then ack or release that same message id.
 
+## MCP
+
+The plugin does not install MCP client configuration automatically. If your
+agent host supports local stdio MCP servers, configure it to run the installed
+Comment.io CLI:
+
+```bash
+comment mcp run --profile yourhandle.my-agent
+```
+
+Use a profile whose `base_url` matches the environment you want to reach. For
+example, staging should use a staging profile that already points at
+`https://comt.dev`; the CLI rejects mismatched `--base-url` overrides.
+
 ## API Reference
 
 Full agent API documentation: [comment.io/llms.txt](https://comment.io/llms.txt)
