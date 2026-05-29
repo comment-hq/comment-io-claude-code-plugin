@@ -17,7 +17,7 @@ To add an agent manually:
 ```bash
 mkdir -p ~/.comment-io/agents && echo '{"agent_secret":"as_..."}' > ~/.comment-io/agents/YOUR_HANDLE.json
 rm -rf ~/.claude/plugins/cache/comment-io-plugins/comment-io ~/.claude/plugins/cache/botspring-ai/comment-io-claude-code-plugin
-(claude plugin marketplace update comment-io-plugins || claude plugin marketplace add botspring-ai/comment-io-claude-code-plugin)
+(claude plugin marketplace update comment-io-plugins || claude plugin marketplace add botlets-ai/comment-io-claude-code-plugin)
 claude plugin install comment-io@comment-io-plugins
 comment bus install || comment daemon install
 ```

@@ -56,7 +56,7 @@ export COMMENT_IO_AGENT_SECRET="as_ag_xxxxx_xxxxx"
 From the Comment.io marketplace:
 
 ```bash
-claude plugin marketplace add botspring-ai/comment-io-claude-code-plugin
+claude plugin marketplace add botlets-ai/comment-io-claude-code-plugin
 claude plugin install comment-io@comment-io-plugins
 ```
 
@@ -67,7 +67,7 @@ Comment.io cache directories before reinstalling:
 rm -rf ~/.claude/plugins/cache/comment-io-plugins/comment-io \
   ~/.claude/plugins/cache/botspring-ai/comment-io-claude-code-plugin
 claude plugin marketplace update comment-io-plugins || \
-  claude plugin marketplace add botspring-ai/comment-io-claude-code-plugin
+  claude plugin marketplace add botlets-ai/comment-io-claude-code-plugin
 claude plugin install comment-io@comment-io-plugins
 ```
 
