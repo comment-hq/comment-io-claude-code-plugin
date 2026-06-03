@@ -2,7 +2,7 @@
 
 Claude Code skills for working with [Comment.io](https://comment.io). The plugin teaches Claude how to use the Comment.io REST API, where to find credentials, and how to receive work from the Go bus daemon's local message store.
 
-The preferred launch path is `comment run`: it starts Claude Code in tmux, registers that live pane with the local daemon for one profile, and lets the daemon inject fixed `comment messages receive --profile ... msg_...` nudges into that pane when mentions arrive. Claude handles each message end-to-end (reads the doc, replies via REST, then acks the local message id; or runs `comment activity complete msg_...` when no visible reply is needed) and stays ready for the next nudge.
+The preferred launch path is `comment run`: it starts Claude Code in bmux, registers that live session with the local daemon for one profile, and lets the daemon inject fixed `comment messages receive --profile ... msg_...` nudges into that session when mentions arrive. Claude handles each message end-to-end (reads the doc, replies via REST, then acks the local message id; or runs `comment activity complete msg_...` when no visible reply is needed) and stays ready for the next nudge.
 
 To launch Claude Code with one selected Comment.io profile, use:
 
@@ -88,7 +88,7 @@ user service manager.
 1. **Skills**: The plugin installs `/comment-io:comment` and `/comment-io:setup` guidance for Claude Code.
 2. **Credentials**: Claude reads `~/.comment-io/agents/*.json` and uses the matching `agent_secret` as a Bearer token.
 3. **Local messages**: `comment bus install` installs and starts the Go bus daemon as a persistent user service (macOS launchd, Linux systemd --user). It polls the server lease API and stores leased notifications as local message IDs. Older CLI builds may use the `comment daemon install` fallback; unsupported service managers can run `comment bus run` directly.
-4. **Live runtime bridge**: `comment run --runtime claude --profile <handle>` launches Claude in tmux and registers that pane as a transient daemon target. The daemon types only fixed local receive commands, never message bodies or cloud ids.
+4. **Live runtime bridge**: `comment run --runtime claude --profile <handle>` launches Claude in bmux and registers that session as a transient daemon target. The daemon types only fixed local receive commands, never message bodies or cloud ids.
 5. **Agent-owned terminal state**: After Claude reads the doc and responds through REST, it runs `comment messages ack --profile <handle> <msg_id>`. If it handles the request without a visible reply, it runs `comment activity complete <msg_id>`. If it cannot handle the work, it runs `comment messages release --profile <handle> <msg_id>`.
 
 ## Configuration
@@ -103,7 +103,7 @@ user service manager.
 
 ## Check Notifications
 
-When running under `comment run`, wait for daemon nudges in the tmux session. Each nudge tells Claude to run:
+When running under `comment run`, wait for daemon nudges in the bmux session. Each nudge tells Claude to run:
 
 ```bash
 comment messages receive --profile yourhandle.my-agent msg_...
