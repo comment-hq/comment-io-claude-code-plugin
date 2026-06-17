@@ -1,0 +1,43 @@
+#!/bin/sh
+# Comment.io SessionEnd hook: release an impromptu `/comment listen` claim when the
+# session ends, so closing a bare-`claude` listener doesn't leave the handle
+# claimed (a stale claim would otherwise block re-attach until `--force` or a
+# daemon restart). No-op unless this session has a listen binding file.
+#
+# Only impromptu attach writes a binding (keyed by the Claude Code session id) and
+# claims with that id, so releasing with the same id satisfies the daemon's
+# no-takeover session check. The `comment run` / launcher paths don't write a
+# binding (the launcher releases its own claim when its child exits), so this hook
+# is inert for them.
+set -u
+
+cat >/dev/null 2>&1 || true   # consume the SessionEnd hook stdin
+
+SESSION_ID="${CLAUDE_CODE_SESSION_ID:-}"
+[ -n "$SESSION_ID" ] || exit 0
+
+# Resolve the state root the same way the CLI and the listen hook do, so a staging
+# session cleans up the binding it actually wrote (~/.comment-io-staging), not a
+# hard-coded production root.
+if [ -n "${COMMENT_IO_HOME:-}" ]; then
+  HOME_DIR="$COMMENT_IO_HOME"
+elif [ "$(printf '%s' "${COMMENT_IO_ENV:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" = "staging" ]; then
+  HOME_DIR="$HOME/.comment-io-staging"
+else
+  HOME_DIR="$HOME/.comment-io"
+fi
+BIND="$HOME_DIR/rewake/bind-$SESSION_ID"
+[ -f "$BIND" ] || exit 0
+
+HANDLE=$(cat "$BIND" 2>/dev/null || true)
+# Remove the binding BEFORE releasing the daemon claim. The binding's absence is
+# the authoritative "user detached" signal the rewake loop checks on claim_lost;
+# releasing first would leave a window where the loop sees the binding still
+# present, treats the release as a daemon restart, and re-claims — undoing the
+# detach. rm-first closes that window.
+rm -f "$BIND" 2>/dev/null || true
+COMMENT="${COMMENT_IO_CLI:-comment}"
+if [ -n "$HANDLE" ] && command -v "$COMMENT" >/dev/null 2>&1; then
+  "$COMMENT" listen release --profile "$HANDLE" --session "$SESSION_ID" >/dev/null 2>&1 || true
+fi
+exit 0

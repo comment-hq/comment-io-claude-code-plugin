@@ -1,0 +1,148 @@
+#!/bin/sh
+# Comment.io asyncRewake Stop-hook body.
+#
+# Blocks (in the background, via the hook's async:true) until a Comment.io
+# message for this session's bound handle arrives, then exits 2 — which Claude
+# Code's asyncRewake turns into a model wake-up, delivering the message as
+# context. Prefers the local daemon (`comment messages wait --rewake`, full
+# lease/ack); with no daemon it falls back to holding the notification WebSocket
+# directly via comment-rewake-fallback.mjs.
+#
+# It is a no-op for an ordinary Claude session. A handle is listened for ONLY when
+# one of two explicit signals is present:
+#   - managed / launcher / `comment run`: COMMENT_IO_PROFILE set together with the
+#     daemon session triple (a daemon-cold-started managed session) OR
+#     COMMENT_IO_LISTEN (set by the `comment listen <handle>` launcher AND by a
+#     `comment run --runtime claude` transient runtime). The daemon skips its tmux
+#     keystroke for exactly this listener while we pull, so there is no double-wake.
+#   - impromptu attach: a binding file written by the `/comment listen` skill, keyed
+#     by the Claude Code session id, so bare `claude` + attach works.
+set -u
+
+# Always consume the Stop-hook stdin first so we never SIGPIPE the harness.
+cat >/dev/null 2>&1 || true
+
+COMMENT="${COMMENT_IO_CLI:-comment}"
+# Resolve the state root exactly as the `comment` CLI does: COMMENT_IO_HOME wins,
+# else COMMENT_IO_ENV selects production (~/.comment-io) vs staging
+# (~/.comment-io-staging). Hard-coding production would point the lock/binding,
+# the daemon socket, and the Node fallback's profile at the wrong root under
+# staging, so a staging-only listener would silently never wake.
+if [ -n "${COMMENT_IO_HOME:-}" ]; then
+  HOME_DIR="$COMMENT_IO_HOME"
+elif [ "$(printf '%s' "${COMMENT_IO_ENV:-}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" = "staging" ]; then
+  HOME_DIR="$HOME/.comment-io-staging"
+else
+  HOME_DIR="$HOME/.comment-io"
+fi
+STATE_DIR="$HOME_DIR/rewake"
+CC_SESSION_ID="${CLAUDE_CODE_SESSION_ID:-}"
+
+# Resolve the handle to listen for (empty => stay inert). Two explicit signals:
+#   - managed session / launcher / `comment run`: either the daemon injects the
+#     session triple (COMMENT_IO_SESSION_ID + COMMENT_IO_SESSION_GENERATION) for a
+#     cold-started managed session, OR COMMENT_IO_LISTEN is set — by the
+#     `comment listen <handle>` launcher and by a `comment run --runtime claude`
+#     transient runtime. In every case the daemon skips its tmux keystroke for this
+#     listener while we pull, so arming here does not double-deliver. (We key off
+#     the triple / COMMENT_IO_LISTEN, never COMMENT_IO_RUNTIME_RUN alone: a non-arming
+#     transient runtime, e.g. a different runtime, sets RUNTIME_RUN but no LISTEN.)
+#   - impromptu attach: a binding file written by `/comment listen`, keyed by the
+#     Claude Code session id.
+PROFILE=""
+# For impromptu attach, the daemon scopes the wait to the listen claim's session
+# (CLAUDE_CODE_SESSION_ID, which is the claim's ClaimedBy) so a detached/reassigned
+# claim returns claim_lost instead of stranding the next mention on a stale waiter.
+# A managed session (triple) and a `comment run` runtime have no listen claim, so
+# LISTEN_SESSION stays empty there (profile-scoped wait, daemon-scoped by identity).
+LISTEN_SESSION=""
+if [ -n "${COMMENT_IO_PROFILE:-}" ] && { { [ -n "${COMMENT_IO_SESSION_ID:-}" ] && [ -n "${COMMENT_IO_SESSION_GENERATION:-}" ]; } || [ -n "${COMMENT_IO_LISTEN:-}" ]; }; then
+  PROFILE="$COMMENT_IO_PROFILE"
+  # The `comment listen <handle>` launcher forwards its claim token here so the
+  # wait stays claim-scoped; a managed session (triple) has no listen claim, so
+  # this is empty there (the daemon scopes it by the session triple instead).
+  LISTEN_SESSION="${COMMENT_IO_LISTEN_SESSION:-}"
+elif [ -z "${COMMENT_IO_RUNTIME_RUN:-}" ] && [ -n "$CC_SESSION_ID" ] && [ -f "$STATE_DIR/bind-$CC_SESSION_ID" ]; then
+  # Impromptu attach is honored only in a bare claude session. Inside any
+  # `comment run` (COMMENT_IO_RUNTIME_RUN set) the runtime arms via COMMENT_IO_LISTEN
+  # in the branch above (and the daemon skips its keystroke for it), so honoring an
+  # impromptu binding here too would double-deliver; skip it.
+  PROFILE=$(cat "$STATE_DIR/bind-$CC_SESSION_ID" 2>/dev/null || true)
+  LISTEN_SESSION="$CC_SESSION_ID"
+fi
+[ -n "$PROFILE" ] || exit 0
+
+mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
+LOCK="$STATE_DIR/listen-$PROFILE.lock"
+
+# Singleton via atomic noclobber create. The lock content is "<pid> <session>"
+# written in the SAME atomic operation that creates it (set -C makes `>` fail if
+# the file exists), so another instance never sees the lock without a holder. The
+# session field lets us tell two cases apart when the lock is already held by a
+# LIVE process:
+#   - same session (a re-armed hook for THIS listener — the common case where the
+#     model stops again while the prior async hook is still waiting): stand aside,
+#     the prior hook still covers wakeups.
+#   - different session (a detach+reattach HANDOFF: another session has taken over
+#     this handle and the prior listener is exiting): wait for the prior holder to
+#     free the lock rather than giving up, so the handle is not left with no
+#     listener until this session's next stop. Bounded so a wedged holder can't
+#     block us forever. A dead holder's lock is stale and reclaimed.
+# The cleanup trap removes the lock only if it still holds our PID.
+lock_owner_pid() { cut -d' ' -f1 "$LOCK" 2>/dev/null; }
+lock_owner_session() { cut -d' ' -f2- "$LOCK" 2>/dev/null; }
+acquire_lock() { ( set -C; printf '%s %s\n' "$$" "$LISTEN_SESSION" >"$LOCK" ) 2>/dev/null; }
+if ! acquire_lock; then
+  waited=0
+  while :; do
+    oldpid=$(lock_owner_pid)
+    if [ -z "$oldpid" ] || ! kill -0 "$oldpid" 2>/dev/null; then
+      rm -f "$LOCK" 2>/dev/null
+      acquire_lock && break
+      continue
+    fi
+    # Live holder: same logical listener (same session token) stands aside.
+    [ "$(lock_owner_session)" = "$LISTEN_SESSION" ] && exit 0
+    # Different session: a handoff. Wait for the prior holder to exit, bounded to a
+    # little over the listen wait timeout so a wedged holder can't block forever.
+    waited=$((waited + 2))
+    [ "$waited" -gt 140 ] && exit 0
+    sleep 2
+    acquire_lock && break
+  done
+fi
+trap 'if [ "$(lock_owner_pid)" = "$$" ]; then rm -f "$LOCK" 2>/dev/null; fi' EXIT INT TERM
+
+# Prefer the daemon when its socket is live: it claims cloud notifications into
+# local messages with lease/ack and (for managed sessions) skips the bmux nudge
+# while we pull. Gate on the socket FILE existing — not `comment bus health` (which
+# can report healthy from the local store while the socket is down) and not the
+# wait's exit code (which can be a pre-probe auth error) — so a no-daemon setup
+# (raw agent profile, no owner capability) goes straight to the WS fallback below.
+DAEMON_SOCK="$HOME_DIR/daemon.sock"
+if command -v "$COMMENT" >/dev/null 2>&1 && [ -S "$DAEMON_SOCK" ]; then
+  COMMENT_IO_LISTEN_SESSION="$LISTEN_SESSION" "$COMMENT" messages wait --rewake --profile "$PROFILE"
+  rc=$?
+  [ "$rc" -eq 2 ] && exit 2
+  # rc 3 = socket present but not reachable (stale/connection refused) -> fall
+  # through to the WS fallback. Any other non-2 code = daemon present but no wake
+  # (older CLI / transient error / claim lost); exit 0 (don't double-deliver).
+  [ "$rc" -ne 3 ] && exit 0
+fi
+
+# No daemon: hold the notification WebSocket directly (needs node with a global
+# WebSocket, i.e. Node 21+). Best effort; exits 0 (no wake) if node is absent.
+if command -v node >/dev/null 2>&1; then
+  script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
+  # Pass the resolved home so the fallback reads the profile from the SAME root
+  # the CLI/daemon use (it otherwise hard-codes ~/.comment-io and would miss a
+  # staging profile under ~/.comment-io-staging). Also forward the listen session
+  # so the fallback honors the same detach contract as the daemon path: it stops
+  # (instead of waking a session that no longer owns the handle) once the binding
+  # is gone / no longer names this handle, or the launcher process has exited.
+  COMMENT_IO_REWAKE_PROFILE="$PROFILE" COMMENT_IO_HOME="$HOME_DIR" \
+    COMMENT_IO_LISTEN_SESSION="$LISTEN_SESSION" node "$script_dir/comment-rewake-fallback.mjs"
+  exit $?
+fi
+
+exit 0

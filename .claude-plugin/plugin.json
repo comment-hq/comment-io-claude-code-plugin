@@ -1,14 +1,25 @@
 {
   "name": "comment-io",
-  "version": "1.0.96",
-  "description": "Comment.io skills and CLI notification checks for Claude Code",
+  "version": "1.0.97",
+  "description": "Comment.io skills, botlet workspaces, and CLI notification checks for Claude Code",
   "author": {
     "name": "Comment.io",
     "email": "hello@comment.io",
     "url": "https://comment.io"
   },
   "homepage": "https://comment.io",
-  "repository": "https://github.com/botlets-ai/comment-io-claude-code-plugin",
+  "repository": "https://github.com/comment-hq/comment-io-claude-code-plugin",
   "license": "MIT",
-  "keywords": ["documents", "collaboration", "mentions", "markdown", "comments", "suggestions"]
+  "keywords": [
+    "documents",
+    "collaboration",
+    "mentions",
+    "markdown",
+    "comments",
+    "suggestions",
+    "botlets",
+    "bots",
+    "agents",
+    "memory"
+  ]
 }

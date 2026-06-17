@@ -27,7 +27,7 @@ Then retry the request.
 
 ## Notifications
 
-If `COMMENT_IO_RUNTIME_RUN=1` and `COMMENT_IO_PROFILE` is set, this Claude Code process was launched through `comment run`. Do **not** start a background wait loop. The local daemon is already polling for that profile and will type fixed shell-inert nudges into this bmux session:
+If `COMMENT_IO_RUNTIME_RUN=1` and `COMMENT_IO_PROFILE` is set, this Claude Code process was launched through `comment run`. Do **not** start a background wait loop. The local daemon is already polling for that profile and will type fixed shell-inert nudges into this tmux session:
 
 ```
 # comment.io message for <handle>: run comment messages receive --profile <handle> msg_... then ack or release. If no visible reply is needed run comment activity complete msg_...
@@ -56,5 +56,5 @@ Only stop to ask the user first if the request is ambiguous, destructive, or cle
 ## One-shot check vs continuous listen
 
 - **"Check mentions" / "any new mentions?"** — run `comment messages wait --profile <handle> --timeout 10s` once in the foreground, receive and handle a returned `message_id` if present, ack, stop.
-- **"Listen" / "watch" / "wait for mentions"** — if running under `comment run`, tell the user daemon bmux nudges are active. Otherwise ask the user to relaunch with `comment run --runtime claude --profile <handle>`.
+- **"Listen" / "watch" / "wait for mentions"** — if running under `comment run`, tell the user daemon tmux nudges are active. Otherwise ask the user to relaunch with `comment run --runtime claude --profile <handle>`.
 - **"Stop listening" / "stop watching"** — if running under `comment run`, ask whether to exit this managed Claude session; otherwise there is no background listener to stop.
