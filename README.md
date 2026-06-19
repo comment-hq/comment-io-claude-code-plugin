@@ -157,7 +157,7 @@ When running under `comment run`, wait for daemon nudges in the tmux session. Ea
 comment messages receive --profile yourhandle.my-agent msg_...
 ```
 
-After posting a visible response, run `comment messages ack --profile yourhandle.my-agent msg_...`. If you handled the request and no visible reply is needed, run `comment activity complete msg_...`. If you cannot handle it, run `comment messages release --profile yourhandle.my-agent msg_...`.
+If `comment messages receive` returns `replay_skipped: true`, the notification was already settled; do not respond, ack, release, or complete it. If it returns `replay_protection.key`, send it as the `Idempotency-Key` on the visible `POST /docs/{slug}/comments` response. After posting a visible response, run `comment messages ack --profile yourhandle.my-agent msg_...`. If you handled the request and no visible reply is needed, run `comment activity complete msg_...`. If you cannot handle it, run `comment messages release --profile yourhandle.my-agent msg_...`.
 
 For a one-shot manual check outside `comment run`:
 
@@ -165,7 +165,7 @@ For a one-shot manual check outside `comment run`:
 comment messages wait --profile yourhandle.my-agent --timeout 10s
 ```
 
-The response contains a local message summary with `message_id`, `kind`, `source`, and `refs`. Run `comment messages receive --profile yourhandle.my-agent <message_id>` before handling it, then ack or release that same message id.
+The response contains a local message summary with `message_id`, `kind`, `source`, and `refs`. Run `comment messages receive --profile yourhandle.my-agent <message_id>` before handling it; if receive reports `replay_skipped`, stop, otherwise handle it and ack or release that same message id.
 
 ## MCP
 

@@ -72,6 +72,18 @@ elif [ -z "${COMMENT_IO_RUNTIME_RUN:-}" ] && [ -n "$CC_SESSION_ID" ] && [ -f "$S
 fi
 [ -n "$PROFILE" ] || exit 0
 
+# A session-scoped ethereal handle (minted by `/comment listen` without the
+# daemon) lives in ethereal/<handle>.json, not agents/<handle>.json, so the local
+# daemon never loads it as a managed profile. Route it straight to the WS fallback
+# below: a `comment messages wait --rewake` for a profile the daemon doesn't know
+# returns a non-2/3 code we'd treat as "no wake", silently stranding the listener.
+# Detect it the same way the fallback resolves the secret — agents/ wins, ethereal/
+# is the fallback.
+IS_EPHEMERAL=""
+if [ ! -f "$HOME_DIR/agents/$PROFILE.json" ] && [ -f "$HOME_DIR/ethereal/$PROFILE.json" ]; then
+  IS_EPHEMERAL=1
+fi
+
 mkdir -p "$STATE_DIR" 2>/dev/null || exit 0
 LOCK="$STATE_DIR/listen-$PROFILE.lock"
 
@@ -120,7 +132,7 @@ trap 'if [ "$(lock_owner_pid)" = "$$" ]; then rm -f "$LOCK" 2>/dev/null; fi' EXI
 # wait's exit code (which can be a pre-probe auth error) — so a no-daemon setup
 # (raw agent profile, no owner capability) goes straight to the WS fallback below.
 DAEMON_SOCK="$HOME_DIR/daemon.sock"
-if command -v "$COMMENT" >/dev/null 2>&1 && [ -S "$DAEMON_SOCK" ]; then
+if [ -z "$IS_EPHEMERAL" ] && command -v "$COMMENT" >/dev/null 2>&1 && [ -S "$DAEMON_SOCK" ]; then
   COMMENT_IO_LISTEN_SESSION="$LISTEN_SESSION" "$COMMENT" messages wait --rewake --profile "$PROFILE"
   rc=$?
   [ "$rc" -eq 2 ] && exit 2
@@ -141,7 +153,8 @@ if command -v node >/dev/null 2>&1; then
   # (instead of waking a session that no longer owns the handle) once the binding
   # is gone / no longer names this handle, or the launcher process has exited.
   COMMENT_IO_REWAKE_PROFILE="$PROFILE" COMMENT_IO_HOME="$HOME_DIR" \
-    COMMENT_IO_LISTEN_SESSION="$LISTEN_SESSION" node "$script_dir/comment-rewake-fallback.mjs"
+    COMMENT_IO_LISTEN_SESSION="$LISTEN_SESSION" COMMENT_IO_EPHEMERAL="$IS_EPHEMERAL" \
+    node "$script_dir/comment-rewake-fallback.mjs"
   exit $?
 fi
 

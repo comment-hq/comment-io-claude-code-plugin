@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import net from "node:net";
+import crypto from "node:crypto";
 
 // Handle is resolved by comment-rewake-listen (managed/launcher env or the
 // impromptu binding file) and passed in COMMENT_IO_REWAKE_PROFILE.
@@ -20,12 +21,19 @@ if (!profile) process.exit(0);
 if (typeof WebSocket === "undefined") process.exit(0); // Node < 21: no global WebSocket
 
 const homeDir = process.env.COMMENT_IO_HOME || path.join(os.homedir(), ".comment-io");
-const profilePath = path.join(homeDir, "agents", `${profile}.json`);
+// A permanent registered profile lives in agents/<handle>.json; a session-scoped
+// ethereal handle (minted by `/comment listen` without the daemon) lives in
+// ethereal/<handle>.json. agents/ wins; ethereal/ is the fallback so an ethereal
+// listener still resolves its secret and wakes on mention instead of exiting here.
 let conf;
 try {
-  conf = JSON.parse(fs.readFileSync(profilePath, "utf8"));
+  conf = JSON.parse(fs.readFileSync(path.join(homeDir, "agents", `${profile}.json`), "utf8"));
 } catch {
-  process.exit(0); // unknown profile — nothing to listen for
+  try {
+    conf = JSON.parse(fs.readFileSync(path.join(homeDir, "ethereal", `${profile}.json`), "utf8"));
+  } catch {
+    process.exit(0); // unknown profile — nothing to listen for
+  }
 }
 const SECRET = conf.agent_secret;
 if (!SECRET) process.exit(0);
@@ -53,6 +61,10 @@ try { fs.mkdirSync(stateDir, { recursive: true }); } catch {}
 // socket/lock and wake a session that no longer owns the handle. An empty listen
 // session (managed / `comment run`) has no scoping signal here, so it stays armed.
 const LISTEN_SESSION = process.env.COMMENT_IO_LISTEN_SESSION || "";
+// Ethereal handles have no daemon profile, so the local daemon coming back does
+// NOT pick them up — suppress the daemon-back exit (below) for this path, else an
+// ethereal listener would drop ~10s after any daemon starts and miss later @mentions.
+const IS_EPHEMERAL = process.env.COMMENT_IO_EPHEMERAL === "1";
 function stillWantsToListen() {
   if (!LISTEN_SESSION) return true;
   if (LISTEN_SESSION.startsWith("launch-")) {
@@ -100,7 +112,7 @@ function exitIfDaemonBack() {
 // that's intended (the fallback is a long-lived idle listener).
 setInterval(() => {
   if (!stillWantsToListen()) process.exit(0);
-  exitIfDaemonBack();
+  if (!IS_EPHEMERAL) exitIfDaemonBack();
 }, 10000);
 
 // `seen` is IN-MEMORY only (not persisted): it dedupes duplicate frames within a
@@ -116,7 +128,34 @@ let seen = new Set();
 // POST /agents/me/notifications/{id}/read after handling — the no-daemon path has
 // no `comment messages ack`, and the server read-state is what dedupes across
 // reconnects, so an unmarked mention correctly re-surfaces until handled.
-const fmt = (n) => ({ id: n.id, doc_slug: n.doc_slug, doc_title: n.doc_title, from_name: n.from_name || n.from_handle, context: n.context, comment_id: n.comment_id });
+function replayProtection(n) {
+  if (!n?.id) return undefined;
+  let targetType = "document";
+  let targetID = n.doc_slug || "";
+  if (n.comment_id) {
+    targetType = "comment";
+    targetID = n.comment_id;
+  } else if (n.suggestion_id) {
+    targetType = "suggestion";
+    targetID = n.suggestion_id;
+  }
+  if (!targetID) return undefined;
+  const intent = "visible_response";
+  const raw = [n.id, targetType, targetID, intent].join("\n");
+  const key = "nrp_" + crypto.createHash("sha256").update(raw).digest("hex").slice(0, 32);
+  return { key, target_type: targetType, target_id: targetID, intent };
+}
+
+const fmt = (n) => ({
+  id: n.id,
+  doc_slug: n.doc_slug,
+  doc_title: n.doc_title,
+  from_name: n.from_name || n.from_handle,
+  context: n.context,
+  comment_id: n.comment_id,
+  suggestion_id: n.suggestion_id,
+  replay_protection: replayProtection(n),
+});
 
 // Surface any not-yet-seen mention(s) and, if there are any, wake (which exits).
 // Shared by the live socket, the catch-up burst, and reconcile() so all three
