@@ -64,9 +64,15 @@ A wake arrives as a system message containing the mention (doc, comment id, text
 
 When there's **no** free handle to attach to (the user is logged in at Comment.io but hasn't installed the daemon/CLI, or the main flow shows no eligible handles), mint an **ethereal** handle: an ephemeral, session-scoped identity that lives only for this session and **never** becomes a botlet or daemon-managed profile. Trigger phrases: "listen as a throwaway", "I don't have a handle", "make me a temporary identity".
 
-This needs the owner's `ark_` registration key (env `COMMENT_IO_ARK_KEY`, else `$CIO_HOME/config.env`). The whole flow is one script: resolve root/host, read the key, mint, name, persist the credential to the NEW `ethereal/` store, and arm the rewake hook. Choose `DISPLAY` per the naming guidance below; **never print `$ARK`, `$SECRET`, or `agent_secret` into chat**:
+This needs the owner's `ark_` registration key (env `COMMENT_IO_ARK_KEY`, else `$CIO_HOME/config.env`). The whole flow is one script: resolve root/host, read the key, mint, name, persist the credential to the NEW `ethereal/` store, and arm the rewake hook. Choose a display name (variable `CMNT_NAME`) per the naming guidance below; **never print `$ARK`, `$SECRET`, or `agent_secret` into chat** — the script also keeps them out of argv and xtrace:
+
+> Runtime-generic equivalent: the `comment-identity` skill wraps this same mint/store/bind flow behind a single idempotent `ensure-session-identity` helper for **any** agent (Codex, bare shells), with lazy minting on first write and a session-key fallback. This `/listen` path is the Claude-Code-native, explicit-attach version.
 
 ```bash
+# Keep secrets out of any inherited xtrace log, and make new files owner-only.
+set +x 2>/dev/null || true
+umask 077
+
 # State root + host for this environment (same cascade as the CLI/hook).
 CIO_HOME="${COMMENT_IO_HOME:-}"
 [ -n "$CIO_HOME" ] || { [ "$(printf '%s' "${COMMENT_IO_ENV:-}" | tr '[:upper:]' '[:lower:]')" = staging ] && CIO_HOME="$HOME/.comment-io-staging" || CIO_HOME="$HOME/.comment-io"; }
@@ -78,26 +84,40 @@ ARK="${COMMENT_IO_ARK_KEY:-}"
 [ -n "$ARK" ] || { echo "No ark key — paste one from $BASE/settings into $CIO_HOME/config.env"; return 2>/dev/null || exit 1; }
 
 # Mint a session-scoped handle (server picks a random owner.e-xxxxxxxx).
-RESP="$(curl -s -X POST "$BASE/agents/ephemeral" -H "Authorization: Bearer $ARK" -H 'Content-Type: application/json' -d '{}')"
+# Pass the ark_ key via a 0600 header file, NEVER argv — argv is readable via
+# `ps` / /proc/<pid>/cmdline to other same-user processes while curl runs.
+HDR="$(mktemp "${TMPDIR:-/tmp}/cio-hdr.XXXXXX")"
+# the header file holds a secret; clear it even on signal. INT/TERM must EXIT —
+# in sh, returning from a trap resumes the script, so a cancelled run could still
+# POST/PATCH and arm the bind.
+trap 'rm -f "$HDR"' EXIT
+trap 'rm -f "$HDR"; exit 130' INT
+trap 'rm -f "$HDR"; exit 143' TERM
+printf 'Authorization: Bearer %s\n' "$ARK" > "$HDR"
+RESP="$(curl -s -X POST "$BASE/agents/ephemeral" --header @"$HDR" -H 'Content-Type: application/json' -d '{}')"
+rm -f "$HDR"
 
-# Pick a display name per the naming guidance below.
-DISPLAY="Anne"
+# Pick a display name per the naming guidance below. Do NOT name the variable
+# DISPLAY — that is the X11 display env var and would be clobbered (to ":0") in
+# the python subprocess, corrupting the stored name.
+CMNT_NAME="Anne"
 
 # Persist the credential to the NEW ethereal store (0600) — distinct from agents/
 # (which is for permanent registered agents). This file is how the session
 # remembers its own token and can be re-picked-up before expires_at.
-mkdir -p "$CIO_HOME/ethereal" && chmod 700 "$CIO_HOME/ethereal"
-HANDLE="$(COMMENT_IO_EPHEMERAL_RESP="$RESP" CIO_HOME="$CIO_HOME" BASE="$BASE" DISPLAY="$DISPLAY" python3 <<'PY'
+mkdir -p "$CIO_HOME/ethereal" && chmod 700 "$CIO_HOME/ethereal"   # re-harden an existing permissive dir; umask alone won't
+HANDLE="$(COMMENT_IO_EPHEMERAL_RESP="$RESP" CIO_HOME="$CIO_HOME" BASE="$BASE" CMNT_NAME="$CMNT_NAME" CC_SESSION="$CLAUDE_CODE_SESSION_ID" python3 <<'PY'
 import json, os
 r = json.loads(os.environ["COMMENT_IO_EPHEMERAL_RESP"])
 handle = r["handle"]
 rec = {
     "handle": handle,
     "agent_secret": r["agent_secret"],
-    "display_name": os.environ["DISPLAY"] or r.get("display_name", ""),
+    "display_name": os.environ["CMNT_NAME"] or r.get("display_name", ""),
     "expires_at": r.get("expires_at", ""),
     "base_url": r.get("base_url") or os.environ["BASE"],
     "owner": r.get("owner", ""),
+    "session": os.environ.get("CC_SESSION", ""),  # lets ensure-session-identity reclaim this handle if the bind is lost
 }
 p = os.path.join(os.environ["CIO_HOME"], "ethereal", handle + ".json")
 fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -107,9 +127,13 @@ print(handle)
 PY
 )"
 
-# Set the display name (PATCH /agents/me with the ethereal secret).
+# Set the display name (PATCH /agents/me) — secret via 0600 header file, not argv.
 SECRET="$(COMMENT_IO_EPHEMERAL_RESP="$RESP" python3 -c 'import json,os;print(json.loads(os.environ["COMMENT_IO_EPHEMERAL_RESP"])["agent_secret"])')"
-curl -s -X PATCH "$BASE/agents/me" -H "Authorization: Bearer $SECRET" -H 'Content-Type: application/json' -d "{\"name\":\"$DISPLAY\"}" >/dev/null
+HDR="$(mktemp "${TMPDIR:-/tmp}/cio-hdr.XXXXXX")"
+printf 'Authorization: Bearer %s\n' "$SECRET" > "$HDR"
+curl -s -X PATCH "$BASE/agents/me" --header @"$HDR" -H 'Content-Type: application/json' \
+  --data-binary "$(CMNT_NAME="$CMNT_NAME" python3 -c 'import json,os;print(json.dumps({"name":os.environ["CMNT_NAME"]}))')" >/dev/null
+rm -f "$HDR"
 
 # Arm the rewake Stop hook with the same impromptu-attach binding the main flow
 # uses; the hook resolves the secret from ethereal/<handle>.json automatically
@@ -119,7 +143,7 @@ printf '%s' "$HANDLE" > "$CIO_HOME/rewake/bind-$CLAUDE_CODE_SESSION_ID"
 echo "armed: @$HANDLE"
 ```
 
-If `$ARK` is empty, ask the user to paste their registration key from `<BASE>/settings` into `$CIO_HOME/config.env` (open the file in their editor like the `setup-botlet` skill does — don't take the key in chat), then re-run. If the mint returns a non-2xx / `401` / `403`, `$RESP` is an error and `$HANDLE` comes back empty — the ark key is missing or invalid, so send the user back to `<BASE>/settings` and retry.
+If `$ARK` is empty, ask the user to paste their registration key from `<BASE>/settings` into `$CIO_HOME/config.env` (open the file in their editor like the `setup-botlet` skill does — don't take the key in chat), then re-run. If the mint returns a non-2xx / `401` / `403`, `$HANDLE` comes back empty — the ark key is missing or invalid, so send the user back to `<BASE>/settings` and retry. **Do not `echo`/print `$RESP` to diagnose** — on a partial success it contains `agent_secret`; check only whether `$HANDLE` is empty.
 
 **Confirm**: "✅ Listening as @<handle> (<display name>) until it expires — I'll wake when someone @mentions you. Say 'stop listening' to detach." Then end your turn; the Stop hook arms the listener automatically. The **When woken** section above applies identically — reply with the ethereal handle's secret.
 

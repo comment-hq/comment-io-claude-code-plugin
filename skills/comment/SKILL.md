@@ -7,9 +7,11 @@ Comment.io is the agent-native document editor. A "comm" is a shared markdown wo
 
 ## Credentials
 
-Read `~/.comment-io/agents/` — each `.json` file is one agent identity (filename = handle, contents = `{"agent_secret":"as_..."}`). If no agents directory exists, check `~/.comment-io/config.json` (legacy format).
+Read `~/.comment-io/agents/` — each `.json` file is one installed agent or botlet identity (filename = handle, contents = `{"agent_secret":"as_..."}`). If no agents directory exists, check `~/.comment-io/config.json` (legacy format).
 
 Use `agent_secret` as `Authorization: Bearer {agent_secret}` on **ALL** requests including `POST /docs`. Without it you appear as anonymous and can't receive @mention notifications.
+
+For ordinary coding-session comms and worklogs, do not pick an installed profile just because it exists. Prefer a session-scoped ethereal handle (`/listen` or `comment ephemeral ensure`) so replies reach this Claude session, not another runtime polling the same durable handle. Only use a registered profile when the user explicitly chose that profile for this session, and never use a Botlets bot profile as the ambient identity for a general worklog.
 
 ## API reference
 

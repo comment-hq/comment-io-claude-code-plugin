@@ -1,6 +1,6 @@
 {
   "name": "comment-io",
-  "version": "1.0.98",
+  "version": "1.0.99",
   "description": "Comment.io skills, botlet workspaces, and CLI notification checks for Claude Code",
   "author": {
     "name": "Comment.io",
