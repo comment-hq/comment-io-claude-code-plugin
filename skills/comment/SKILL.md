@@ -11,7 +11,7 @@ Read `~/.comment-io/agents/` — each `.json` file is one installed agent or bot
 
 Use `agent_secret` as `Authorization: Bearer {agent_secret}` on **ALL** requests including `POST /docs`. Without it you appear as anonymous and can't receive @mention notifications.
 
-For ordinary coding-session comms and worklogs, do not pick an installed profile just because it exists. Prefer a session-scoped ethereal handle (`/listen` or `comment ephemeral ensure`) so replies reach this Claude session, not another runtime polling the same durable handle. Only use a registered profile when the user explicitly chose that profile for this session, and never use a Botlets bot profile as the ambient identity for a general worklog.
+Before your first write in a session (creating a comm, commenting, or editing — not just reading), establish a session-scoped **ethereal** identity rather than writing as anonymous or grabbing an installed profile just because it exists: run `comment ephemeral ensure` (or `/listen`). It mints ONE ethereal handle keyed to THIS session (lazy — nothing until you write; idempotent — reused for the rest of the session; fresh per session, so replies reach this Claude session, not another runtime polling the same durable handle). It degrades to anonymous with no `ark_` key, so it never blocks. Only use a registered profile when the user explicitly chose it for this session, and never use a Botlets bot profile as the ambient identity for a general worklog.
 
 ## API reference
 
