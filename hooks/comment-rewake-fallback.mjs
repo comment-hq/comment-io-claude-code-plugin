@@ -163,7 +163,9 @@ const fmt = (n) => ({
 function surfaceMentions(items) {
   const fresh = [];
   for (const n of items) {
-    if (!n || n.type !== "mention" || !n.id || seen.has(n.id)) continue;
+    // `notify.kind === "done"` is a non-interrupting status update (pull-only,
+    // digest): never wake on it, even if a frame still carries it.
+    if (!n || n.type !== "mention" || n?.notify?.kind === "done" || !n.id || seen.has(n.id)) continue;
     seen.add(n.id);
     fresh.push(n);
   }
@@ -196,7 +198,8 @@ async function reconcile() {
     const items = Array.isArray(d) ? d : (d.notifications || d.items || []);
     const fresh = [];
     for (const n of items) {
-      if (n.type !== "mention" || !n.id || seen.has(n.id)) continue;
+      // `done` is a non-interrupting status update — never re-wake on it.
+      if (n.type !== "mention" || n?.notify?.kind === "done" || !n.id || seen.has(n.id)) continue;
       seen.add(n.id);
       // Only surface UNREAD mentions, on every reconcile (not just the first). A
       // mention already marked read was handled elsewhere (the daemon, another
