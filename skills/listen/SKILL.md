@@ -4,10 +4,11 @@ description: >-
   Attach this Claude Code session to a Comment.io agent handle so it wakes
   natively when someone @mentions that handle. Use when the user says
   "/comment listen", "listen for my mentions", "attach to @handle", "start
-  listening", "who am I listening as", or "stop listening". Attaches to FREE
-  handles, or — when none exist — mints a throwaway session-scoped "ethereal"
-  handle. Handles already managed by the Comment.io daemon must be driven with
-  `comment run <handle>` instead.
+  listening", "who am I listening as", or "stop listening". For coding-session
+  delivery flows, reuses or mints the session-scoped "ethereal" handle that
+  `comment-identity` expects. For explicit user-chosen durable handles, attaches
+  to FREE non-Botlets handles. Handles already managed by the Comment.io daemon
+  must be driven with `comment run <handle>` instead.
 ---
 
 # listen — attach a Claude session to a Comment.io handle
@@ -16,14 +17,22 @@ Make *this* bare `claude` session the live listener for one **free** agent handl
 
 **Reserved handles are off-limits here.** A handle the daemon manages (a bot it cold-starts / autolaunches) must be driven with `comment run <handle>` — attaching impromptu would swap the "brain" out from under whoever expects that bot. `comment listen claim` refuses these; relay the `comment run` hint, don't work around it.
 
-## Attach (the main flow)
+## Delivery/session ethereal flow
+
+If `/comment listen` is being used by a delivery skill (`comment-spec`, `comment-feature`, `worklog`, `drive-plan`, `ship`, `steer`) to arm the session-scoped identity it just minted, **do not enter the registered-handle picker below**. The coding session must listen as its own ethereal handle, not as an ambient registered profile that a botlet or another runtime may also poll.
+
+First check the current session bind (`$CIO_HOME/rewake/bind-$CLAUDE_CODE_SESSION_ID`) and the matching `ethereal/<handle>.json` credential. Reuse it only when the credential is stamped `identity_class: "ethereal"` and belongs to this session/host. If no valid bind exists, mint through `comment ephemeral ensure --base-url "$BASE"` or run the ethereal script below; both write the ethereal credential and wake-bind. Confirm the ethereal handle is armed, then end your turn normally.
+
+Registered profiles are allowed only when the human explicitly asks this session to listen as that handle and it is not a Botlets bot profile.
+
+## Attach a durable handle (explicit user choice)
 
 1. **List handles** and see which are free:
    ```bash
    comment listen handles --json
    ```
-   Each entry is `{handle, managed, claimed, claimed_by}`. Eligible = `managed:false` and `claimed:false`.
-2. **Always prompt the user to pick** from the eligible handles (even if there's only one). Show managed ones as "managed — use `comment run <handle>`" and do not offer them. **If there are no eligible handles, offer the ethereal-handle path below** (mint a throwaway session-scoped identity) instead of stopping.
+   Each entry is `{handle, managed, claimed, claimed_by}`. Eligible = `managed:false`, `claimed:false`, and not a Botlets bot profile. Treat Botlets/daemon-owned profiles as reserved even if they appear locally; they must be driven by the daemon path, not an impromptu listen claim.
+2. **Always prompt the user to pick** from the eligible handles (even if there's only one). Show managed/reserved ones as "managed — use `comment run <handle>`" and do not offer them. **If there are no eligible handles, offer the ethereal-handle path below** (mint a throwaway session-scoped identity) instead of stopping.
 3. **Claim it** (replace `H`), passing this session's id so the daemon can scope and release the claim:
    ```bash
    comment listen claim --profile H --session "$CLAUDE_CODE_SESSION_ID"
@@ -113,6 +122,7 @@ handle = r["handle"]
 rec = {
     "handle": handle,
     "agent_secret": r["agent_secret"],
+    "identity_class": "ethereal",
     "display_name": os.environ["CMNT_NAME"] or r.get("display_name", ""),
     "expires_at": r.get("expires_at", ""),
     "base_url": r.get("base_url") or os.environ["BASE"],
@@ -160,7 +170,7 @@ Give the handle a human face so collaborators read it as a person, not a token:
 
 ## Shortcut launcher
 
-If the user already knows the handle, `comment listen <handle>` launches `claude` with the handle preset (it sets `COMMENT_IO_PROFILE` + `COMMENT_IO_LISTEN`), skipping the in-session pick. The bare-`claude` + `/comment listen` flow above is the headline; this is just a one-step convenience.
+If the user already knows the handle, `comment listen <handle>` launches `claude` with the handle preset (it sets `COMMENT_IO_PROFILE` + `COMMENT_IO_LISTEN`), skipping the in-session pick. Use this only for an explicitly chosen, non-Botlets durable handle. For delivery-work ethereal identities, use the delivery/session ethereal flow above so the bind and `identity_class` checks stay in force. The bare-`claude` + `/comment listen` flow above is the headline; this is just a one-step convenience.
 
 ## Notes
 
