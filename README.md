@@ -86,11 +86,48 @@ user service manager.
 
 ## How It Works
 
-1. **Skills**: The plugin installs `/comment-io:comment` and `/comment-io:setup` guidance for Claude Code.
+1. **Skills**: The plugin installs `/comment-io:comment` and `/comment-io:setup` guidance plus the engineering-workflow skills (see [Engineering workflow skills](#engineering-workflow-skills)) for Claude Code.
 2. **Credentials**: Claude reads `~/.comment-io/agents/*.json` and uses the matching `agent_secret` as a Bearer token.
 3. **Local messages**: `comment bus install` installs and starts the Go bus daemon as a persistent user service (macOS launchd, Linux systemd --user). It polls the server lease API and stores leased notifications as local message IDs. Older CLI builds may use the `comment daemon install` fallback; unsupported service managers can run `comment bus run` directly.
 4. **Live runtime bridge**: `comment run --runtime claude --profile <handle>` launches Claude in tmux and registers that session as a transient daemon target. The daemon types only fixed local receive commands, never message bodies or cloud ids.
 5. **Agent-owned terminal state**: After Claude reads the doc and responds through REST, it runs `comment messages ack --profile <handle> <msg_id>`. If it handles the request without a visible reply, it runs `comment activity complete <msg_id>`. If it cannot handle the work, it runs `comment messages release --profile <handle> <msg_id>`.
+
+## Engineering workflow skills
+
+Beyond the Comment.io product skills, the plugin ships a generic **engineering
+delivery workflow** — plan, prototype, build, review, and ship — whose working
+memory, decision history, and human-steering channel live in a live Comment.io
+worklog. It works in any repo.
+
+Talk to the front door and it routes:
+
+```
+/comment-dev  →  comment-spec (shape) · comment-feature (build) ·
+                 comment-bug (fix) · comment-prototype (try it fast)
+```
+
+| Skill | What it does |
+|---|---|
+| `comment-dev` | Front door — describe the work, it routes to the right path |
+| `comment-spec` · `comment-feature` · `comment-bug` | Shape / build / fix end-to-end to a merge-ready PR |
+| `comment-prototype` | Fast "let me see it first" change; skips the gate, promote later |
+| `drive-plan` · `review-loop` · `ship` | Phased execution engine · looped reviewer panel · PR lifecycle |
+| `worklog` · `steer` · `comment-identity` | The live record · human-in-the-loop · attributable handle |
+| `comment-init` | Scaffold a repo's `docs/TESTING.md` lanes + architecture docs the skills read |
+| `code-review` · `file-bug` · `next` | One official PR review · file a GitHub issue · session handoff note |
+
+The skills are repo-agnostic: they read your repo's `AGENTS.md` (or `CLAUDE.md`)
+and the `docs/TESTING.md` it links for `fast` (iteration) vs `full` (pre-push)
+test lanes; `comment-init` scaffolds those if they're missing. The worklog path
+(`worklog`/`steer`/`comment-feature`/`comment-bug`/`comment-spec`) writes to a
+live Comment.io doc, so it needs a Comment.io agent to write as — create one and
+install its profile at <https://comment.io/setup> (without one, `comment-identity`
+falls back to anonymous). The router, prototype, `review-loop`, `ship`,
+`code-review`, `file-bug`, and `next` run standalone.
+
+> These same skills are published as a runtime-generic bundle (Claude Code,
+> Codex, Cursor, …) at [`comment-hq/skills`](https://github.com/comment-hq/skills)
+> — `npx skills add comment-hq/skills`.
 
 ## Native idle-wake (asyncRewake)
 

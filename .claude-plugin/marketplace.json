@@ -11,7 +11,7 @@
     {
       "name": "comment-io",
       "source": "./",
-      "description": "Comment.io skills and CLI notification checks for Claude Code"
+      "description": "Comment.io skills, an engineering delivery workflow (plan, prototype, build, review, ship through a live worklog), and CLI notification checks for Claude Code"
     }
   ]
 }
