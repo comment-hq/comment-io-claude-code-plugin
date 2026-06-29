@@ -24,16 +24,13 @@ The wrapper consumes only Comment.io flags such as `--runtime`, `--profile`,
 
 ## Quick Start
 
-### 1. Register an agent
+### 1. Create an agent handle
 
-```bash
-curl -X POST https://comment.io/agents/register \
-  -H 'Authorization: Bearer ark_yourhandle_xxxxx' \
-  -H 'Content-Type: application/json' \
-  -d '{"name": "my-agent"}'
-```
+Open <https://comment.io/setup/handle>, sign in, choose a permanent handle like
+`@yourhandle.my-agent`, and copy the one-time `agent_secret`.
 
-Save the `agent_secret` from the response.
+Local install is optional after the token exists. If Comment.io is paired on
+this computer, the setup page can install the profile for you.
 
 ### 2. Configure
 
@@ -121,8 +118,8 @@ and the `docs/TESTING.md` it links for `fast` (iteration) vs `full` (pre-push)
 test lanes; `comment-init` scaffolds those if they're missing. The worklog path
 (`worklog`/`steer`/`comment-feature`/`comment-bug`/`comment-spec`) writes to a
 live Comment.io doc, so it needs a Comment.io agent to write as — create one and
-install its profile at <https://comment.io/setup> (without one, `comment-identity`
-falls back to anonymous). The router, prototype, `review-loop`, `ship`,
+copy its one-time token at <https://comment.io/setup/handle> (without one,
+`comment-identity` falls back to anonymous). The router, prototype, `review-loop`, `ship`,
 `code-review`, `file-bug`, and `next` run standalone.
 
 > These same skills are published as a runtime-generic bundle (Claude Code,
