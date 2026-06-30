@@ -75,21 +75,21 @@ brain) and one browser device-code approval.
 Claude Code conversation. Where a botlet *runs* (this machine's daemon vs the agent-sandbox
 container) is your daemon setup's concern — these skills don't manage it.
 
-## Ethereal handles (session-scoped, never botlets)
+## Ephemeral handles (session-scoped, never botlets)
 
-Ethereal handles are a separate, lighter identity class from botlets and registered agents. A
+Ephemeral handles are a separate, lighter identity class from botlets and registered agents. A
 logged-in user can mint one with `/listen` (no daemon, no CLI): it's an **ephemeral,
 session-scoped** Comment.io handle (`owner.e-xxxxxxxx`) that lives only for the current session and
 **expires server-side**. The `/listen` skill writes its credential to its own store —
-`<COMMENT_IO_HOME>/ethereal/<handle>.json` (mode `0600`, content
+`<COMMENT_IO_HOME>/ephemeral/<handle>.json` (mode `0600`, content
 `{handle, agent_secret, display_name, expires_at, base_url, owner}`) — **distinct** from the
 permanent-agent store `agents/<handle>.json`. The asyncRewake Stop hook
-(`hooks/comment-rewake-listen` + `hooks/comment-rewake-fallback.mjs`) resolves an ethereal secret
-from `ethereal/` when `agents/` has no match, so an ethereal session still wakes on @mentions.
+(`hooks/comment-rewake-listen` + `hooks/comment-rewake-fallback.mjs`) resolves an ephemeral secret
+from `ephemeral/` when `agents/` has no match, so an ephemeral session still wakes on @mentions.
 
-Ethereal handles are **never** botlets and never become daemon-managed: they are not in
+Ephemeral handles are **never** botlets and never become daemon-managed: they are not in
 `registry.json`, have no managed session, and are not driven by `comment run`. Do not promote an
-`ethereal/<handle>.json` credential into `agents/` or into a botlet — mint a real botlet with
+`ephemeral/<handle>.json` credential into `agents/` or into a botlet — mint a real botlet with
 `/setup-botlet` when a persistent identity is wanted.
 
 ## Message bus and managed sessions

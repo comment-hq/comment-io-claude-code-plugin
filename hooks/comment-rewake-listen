@@ -72,15 +72,15 @@ elif [ -z "${COMMENT_IO_RUNTIME_RUN:-}" ] && [ -n "$CC_SESSION_ID" ] && [ -f "$S
 fi
 [ -n "$PROFILE" ] || exit 0
 
-# A session-scoped ethereal handle (minted by `/comment listen` without the
-# daemon) lives in ethereal/<handle>.json, not agents/<handle>.json, so the local
+# A session-scoped ephemeral handle (minted by `/comment listen` without the
+# daemon) lives in ephemeral/<handle>.json, not agents/<handle>.json, so the local
 # daemon never loads it as a managed profile. Route it straight to the WS fallback
 # below: a `comment messages wait --rewake` for a profile the daemon doesn't know
 # returns a non-2/3 code we'd treat as "no wake", silently stranding the listener.
-# Detect it the same way the fallback resolves the secret — agents/ wins, ethereal/
-# is the fallback.
+# Detect it the same way the fallback resolves the secret — agents/ wins, then
+# ephemeral/, then the legacy ethereal/ store while old credentials migrate.
 IS_EPHEMERAL=""
-if [ ! -f "$HOME_DIR/agents/$PROFILE.json" ] && [ -f "$HOME_DIR/ethereal/$PROFILE.json" ]; then
+if [ ! -f "$HOME_DIR/agents/$PROFILE.json" ] && { [ -f "$HOME_DIR/ephemeral/$PROFILE.json" ] || [ -f "$HOME_DIR/ethereal/$PROFILE.json" ]; }; then
   IS_EPHEMERAL=1
 fi
 

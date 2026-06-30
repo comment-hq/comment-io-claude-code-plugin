@@ -22,17 +22,21 @@ if (typeof WebSocket === "undefined") process.exit(0); // Node < 21: no global W
 
 const homeDir = process.env.COMMENT_IO_HOME || path.join(os.homedir(), ".comment-io");
 // A permanent registered profile lives in agents/<handle>.json; a session-scoped
-// ethereal handle (minted by `/comment listen` without the daemon) lives in
-// ethereal/<handle>.json. agents/ wins; ethereal/ is the fallback so an ethereal
-// listener still resolves its secret and wakes on mention instead of exiting here.
+// ephemeral handle (minted by `/comment listen` without the daemon) lives in
+// ephemeral/<handle>.json. agents/ wins; ephemeral/ is the normal fallback;
+// ethereal/ is a legacy fallback while old local credentials migrate.
 let conf;
 try {
   conf = JSON.parse(fs.readFileSync(path.join(homeDir, "agents", `${profile}.json`), "utf8"));
 } catch {
   try {
-    conf = JSON.parse(fs.readFileSync(path.join(homeDir, "ethereal", `${profile}.json`), "utf8"));
+    conf = JSON.parse(fs.readFileSync(path.join(homeDir, "ephemeral", `${profile}.json`), "utf8"));
   } catch {
-    process.exit(0); // unknown profile — nothing to listen for
+    try {
+      conf = JSON.parse(fs.readFileSync(path.join(homeDir, "ethereal", `${profile}.json`), "utf8"));
+    } catch {
+      process.exit(0); // unknown profile — nothing to listen for
+    }
   }
 }
 const SECRET = conf.agent_secret;
@@ -61,9 +65,9 @@ try { fs.mkdirSync(stateDir, { recursive: true }); } catch {}
 // socket/lock and wake a session that no longer owns the handle. An empty listen
 // session (managed / `comment run`) has no scoping signal here, so it stays armed.
 const LISTEN_SESSION = process.env.COMMENT_IO_LISTEN_SESSION || "";
-// Ethereal handles have no daemon profile, so the local daemon coming back does
+// Ephemeral handles have no daemon profile, so the local daemon coming back does
 // NOT pick them up — suppress the daemon-back exit (below) for this path, else an
-// ethereal listener would drop ~10s after any daemon starts and miss later @mentions.
+// ephemeral listener would drop ~10s after any daemon starts and miss later @mentions.
 const IS_EPHEMERAL = process.env.COMMENT_IO_EPHEMERAL === "1";
 function stillWantsToListen() {
   if (!LISTEN_SESSION) return true;

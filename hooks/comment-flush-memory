@@ -1,0 +1,158 @@
+#!/bin/sh
+set -eu
+
+# comment-flush-memory — the memory-flush Stop hook for managed botlet sessions.
+#
+# Why it exists: a botlet "wakes up fresh" each session and its continuity lives
+# in brain docs, NOT in runtime context. A managed `comment run` session can be
+# killed (SIGKILL, container restart, daemon relaunch) with no warning and no
+# chance to save — so work done this session is lost unless it was already
+# written to the brain. This mirrors OpenClaw's "silent turn before compaction
+# that reminds the agent to save important context to memory files", adapted to
+# Claude Code: PreCompact/SessionEnd hooks CANNOT force a model turn, and a
+# botlet is usually killed before compaction ever runs, so the Stop hook (the
+# one hook that can drive another turn via decision:block) is both the only
+# working lever and the kill-case path that matters.
+#
+# What it does: once per session, at the first eligible Stop, it blocks the stop
+# with a reason instructing the bot to append a short session summary + open
+# loops to today's daily note (`memory/YYYY-MM-DD.md`) through the Comment.io
+# API. After that one journaling turn it gets out of the way (stop_hook_active
+# guard + a per-session marker), so it never loops or nags.
+#
+# Scope: it is a STRICT no-op unless this is a managed botlet session
+# (COMMENT_IO_BOT_NAME + COMMENT_IO_PROFILE set and valid, plus a stable session
+# id). An ordinary Claude Code session, an ephemeral `/comment listen` identity,
+# or any non-botlet runtime has no brain to write to, so this hook does nothing
+# for them — their record is the comm they produced, not a daily note.
+#
+# Complementary to the other two Stop hooks: comment-rewake-listen (idle rewake)
+# and comment-check-inbox (drain an already-spooled message). All Stop hooks run
+# every cycle; if more than one blocks, Claude Code concatenates the reasons. We
+# never lease/ack/read the bus spool here.
+
+hook_input=$(cat || true)
+
+if ! command -v python3 >/dev/null 2>&1; then
+  exit 0
+fi
+
+export HOOK_INPUT="$hook_input"
+python3 - "$@" <<'PY'
+import json
+import os
+import re
+import sys
+
+# Mirror the daemon's validators (packages/comment-go/internal/commentbus/ids.go
+# BotNameRE / ProfileRE) and the sibling comment-check-inbox hook so only valid
+# managed botlet sessions are treated as flush-eligible.
+BOT_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]\.[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$")
+SESSION_RE = re.compile(r"^sess_[A-Za-z0-9_-]{20,64}$")
+GENERATION_RE = re.compile(r"^gen_[A-Za-z0-9_-]{16,64}$")
+
+
+def resolve_home():
+    # Resolve the state root exactly as the `comment` CLI and sibling hooks do:
+    # COMMENT_IO_HOME wins (expanded), else COMMENT_IO_ENV selects production
+    # (~/.comment-io) vs staging (~/.comment-io-staging). The marker we write to
+    # dedupe per session lives under this home, so a staging-managed session
+    # dedupes against the same root the rest of its state uses.
+    home = os.environ.get("COMMENT_IO_HOME")
+    if home:
+        return os.path.expanduser(home)
+    if os.environ.get("COMMENT_IO_ENV", "").strip().lower() == "staging":
+        return os.path.expanduser("~/.comment-io-staging")
+    return os.path.expanduser("~/.comment-io")
+
+
+def load_hook_input():
+    raw = os.environ.get("HOOK_INPUT", "")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def emit_block(reason):
+    sys.stdout.write(json.dumps({"decision": "block", "reason": reason}, separators=(",", ":")))
+    sys.stdout.write("\n")
+
+
+FLUSH_REASON = (
+    "Before you go idle, save your working memory so a restart does not lose it. "
+    "Your runtime can be killed without warning (container restart, daemon relaunch), "
+    "and you wake up fresh with only your brain docs as continuity. "
+    "Append a short entry to TODAY's daily note `memory/YYYY-MM-DD.md` (today's UTC date) "
+    "through the Comment.io API: a 2-4 line session summary of what you did this session, "
+    "plus any open loops and links to anything you produced (specs, PRs, docs). "
+    "If today's daily note does not exist yet, create it with `POST /docs` and "
+    "`library_target: {\"kind\":\"bot\"}` while authenticated as this bot; if it exists, "
+    "`GET` it then `PATCH` by its header slug/revision. Keep it brief and raw - this is a "
+    "daily log, not curated `MEMORY.md`, and do not edit the read-only local projection. "
+    "If there is genuinely nothing new since your last save, say so in one line and stop. "
+    "Then stop."
+)
+
+
+def main():
+    hook = load_hook_input()
+    # The 8-block cap: once we've already blocked this stop cycle, get out of the
+    # way so Claude can actually stop after its one journaling turn.
+    if hook.get("stop_hook_active") is True:
+        return 0
+
+    bot = os.environ.get("COMMENT_IO_BOT_NAME", "")
+    profile = os.environ.get("COMMENT_IO_PROFILE", "")
+    # No-op for any non-botlet / ephemeral session: no brain to flush to.
+    if not BOT_RE.fullmatch(bot or "") or not PROFILE_RE.fullmatch(profile or ""):
+        return 0
+
+    # Require the full managed-session signal set, exactly like comment-check-inbox:
+    # a stable session id + generation + an absolute capability-file path. The CAP
+    # file is injected only for daemon-managed botlet sessions, so requiring all
+    # three both gives the marker a stable dedup key and hardens the no-op against
+    # any non-botlet session that merely happens to have COMMENT_IO_BOT_NAME set.
+    session_id = os.environ.get("COMMENT_IO_SESSION_ID", "")
+    generation = os.environ.get("COMMENT_IO_SESSION_GENERATION", "")
+    cap_file = os.environ.get("COMMENT_IO_SESSION_CAP_FILE", "")
+    if (
+        not SESSION_RE.fullmatch(session_id)
+        or not GENERATION_RE.fullmatch(generation)
+        or not os.path.isabs(cap_file)
+    ):
+        return 0
+
+    # Per-session marker: fire the flush exactly once per session. The marker is
+    # keyed by profile+session+generation so a relaunched session (new id/gen)
+    # flushes again, but repeated idle stops within one session do not.
+    home = resolve_home()
+    marker_dir = os.path.join(home, "flush")
+    marker = os.path.join(marker_dir, "flushed-" + profile + "-" + session_id + "-" + generation)
+    if os.path.exists(marker):
+        return 0
+    try:
+        os.makedirs(marker_dir, exist_ok=True)
+        # Record the marker BEFORE blocking so the upcoming journaling turn (and
+        # every later stop) sees it and does not re-block.
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(session_id + ":" + generation + "\n")
+    except Exception:
+        # Could not persist the marker. Without it the once-per-session dedup is
+        # not guaranteed, so blocking now would re-nag on every later stop
+        # (stop_hook_active only suppresses the immediate continuation, not future
+        # organic stops). Skip the flush this stop and let the next stop retry —
+        # matching the sibling hooks' "silent no-op when state can't be persisted"
+        # stance rather than nagging on a read-only/full COMMENT_IO_HOME.
+        return 0
+
+    emit_block(FLUSH_REASON)
+    return 0
+
+
+raise SystemExit(main())
+PY
