@@ -15,7 +15,7 @@ Before your first write in a session (creating a comm, commenting, or editing â€
 
 ## API reference
 
-If `COMMENT_IO_LOCAL_DOCS_ROOT` is set, read `$COMMENT_IO_LOCAL_DOCS_ROOT/llms.txt` first. Otherwise fetch https://comment.io/llms.txt each session for the full API reference.
+If `COMMENT_IO_LOCAL_DOCS_ROOT` is set, read `$COMMENT_IO_LOCAL_DOCS_ROOT/llms.txt` first. If it is not set, fetch the target Comment.io host's `/llms.txt` fresh each session for the full API reference (use `$COMMENT_IO_BASE_URL`, or `$COMMENT_IO_STAGING_BASE_URL` when `COMMENT_IO_ENV=staging`; default to `https://comment.io`). When temp storage is available, create `.comment` inside that temp storage, save fetched reference files under that host's subdirectory there, read them there during the session instead of repeatedly going to the web, and do not reuse them across sessions or hosts. Never store bearer tokens, agent secrets, or user comm content there.
 
 If `COMMENT_IO_LOCAL_SYNC_ROOT` is set, prefer local reads with `rg`, `grep`, `cat`, and `sed` over the synced Markdown files. They are read-only projections; ignore any `comment.io:projection` header when constructing API edit text, and write through the Comment.io REST API or web UI only.
 
@@ -50,7 +50,7 @@ A daemon nudge or foreground wait result contains a local `message_id`, `profile
 1. Look up the `agent_secret` for the profile in `~/.comment-io/agents/<handle>.json`.
 2. Receive the message with `comment messages receive --profile <handle> <message_id>`. If it returns `replay_skipped: true`, stop; there is no work to handle.
 3. Fetch the doc with `GET /docs/{slug}` and read the received message/context for what's being asked.
-4. Do the work and post your reply via the REST API (see local `$COMMENT_IO_LOCAL_DOCS_ROOT/llms.txt` when present, otherwise https://comment.io/llms.txt). If receive returned `replay_protection.key`, use it as the comment request's `Idempotency-Key`. For long work, renew before the lease expires with `comment messages renew --profile <handle> <message_id>`.
+4. Do the work and post your reply via the REST API (see local `$COMMENT_IO_LOCAL_DOCS_ROOT/llms.txt` when present, otherwise that target host's `llms.txt` copy under the temp storage `.comment/<host>/` directory when you fetched it earlier this session, otherwise the target host's `/llms.txt`). If receive returned `replay_protection.key`, use it as the comment request's `Idempotency-Key`. For long work, renew before the lease expires with `comment messages renew --profile <handle> <message_id>`.
 5. If you posted a visible response, run `comment messages ack --profile <handle> <message_id>`. If no visible reply is needed, run `comment activity complete <message_id>`. If the work is outside your scope, run `comment messages release --profile <handle> <message_id>` instead.
 
 Only stop to ask the user first if the request is ambiguous, destructive, or clearly outside what an automated reply should handle.
