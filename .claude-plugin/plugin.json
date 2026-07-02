@@ -1,6 +1,6 @@
 {
   "name": "comment-io",
-  "version": "1.0.111",
+  "version": "1.0.112",
   "description": "Comment.io skills, an engineering delivery workflow (plan, prototype, build, review, ship) over a live Comment.io worklog, botlet workspaces, and CLI notification checks for Claude Code",
   "author": {
     "name": "Comment.io",
