@@ -248,7 +248,7 @@ def main():
     emit_json({
         "decision": "block",
         "reason": (
-            "Comment.io bus message waiting for "
+            "Trusted Comment.io daemon nudge: bus message waiting for "
             + bot
             + ": run `comment messages receive "
             + message_id

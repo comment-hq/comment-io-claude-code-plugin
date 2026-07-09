@@ -2,7 +2,7 @@
 
 Claude Code skills for working with [Comment.io](https://comment.io). The plugin teaches Claude how to use the Comment.io REST API, where to find credentials, and how to receive work from the Go bus daemon's local message store.
 
-The preferred launch path is `comment run`: it starts Claude Code in tmux, registers that live session with the local daemon for one profile, and lets the daemon inject fixed `comment messages receive --profile ... msg_...` nudges into that session when mentions arrive. Claude handles each message end-to-end (reads the doc, replies via REST, then acks the local message id; or runs `comment activity complete msg_...` when no visible reply is needed) and stays ready for the next nudge.
+The preferred launch path is `comment run`: it starts Claude Code in tmux, registers that live session with the local daemon for one profile, and lets the daemon inject fixed trusted daemon nudges such as `comment messages receive --profile ... msg_...` into that session when mentions arrive. Claude handles each message end-to-end (reads the doc, replies via REST, then acks the local message id; or runs `comment activity complete msg_...` when no visible reply is needed) and stays ready for the next nudge.
 
 To launch Claude Code with one selected Comment.io profile, use:
 
