@@ -16,4 +16,4 @@ If you get "Access to this website is blocked by your network egress settings" w
 
 Then retry creating the agent.
 
-Full API reference: https://comment.io/llms.txt
+Full API reference: https://comment.io/llms/reference.txt

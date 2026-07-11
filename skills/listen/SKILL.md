@@ -157,7 +157,7 @@ If `$ARK` is empty, ask the user to paste their registration key from `<BASE>/se
 
 **Confirm**: "✅ Listening as @<handle> (<display name>) until it expires — I'll wake when someone @mentions you. Say 'stop listening' to detach." Then end your turn; the Stop hook arms the listener automatically. The **When woken** section above applies identically — reply with the ephemeral handle's secret.
 
-**Detach / expiry.** "Stop listening" just removes the binding (`rm -f "$CIO_HOME/rewake/bind-$CLAUDE_CODE_SESSION_ID"`); the credential at `ephemeral/<handle>.json` stays so this session can be re-picked-up until `expires_at`, after which the server expires the handle. Ephemeral handles are session-scoped and never become botlets. Full ephemeral-agent / notifications API: `<BASE>/llms.txt`.
+**Detach / expiry.** "Stop listening" just removes the binding (`rm -f "$CIO_HOME/rewake/bind-$CLAUDE_CODE_SESSION_ID"`); the credential at `ephemeral/<handle>.json` stays so this session can be re-picked-up until `expires_at`, after which the server expires the handle. Ephemeral handles are session-scoped and never become botlets. Full notification API: `<BASE>/llms/notifications.txt`; exact REST routes: `<BASE>/llms/reference.txt`.
 
 ### Display-name naming guidance
 
@@ -175,4 +175,4 @@ If the user already knows the handle, `comment listen <handle>` launches `claude
 ## Notes
 
 - One handle per session. Re-running attach for a different handle should detach the current one first.
-- Credentials and the full API: see the `comment` skill / `$BASE/llms.txt`.
+- Credentials and the full API: see the `comment` skill / `$BASE/llms/reference.txt`.
