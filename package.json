@@ -1,6 +1,6 @@
 {
   "name": "@comment-io/claude-code-plugin",
-  "version": "1.0.118",
+  "version": "1.0.119",
   "private": true,
   "description": "Comment.io skills, botlet workspaces, and CLI notification checks for Claude Code",
   "scripts": {
