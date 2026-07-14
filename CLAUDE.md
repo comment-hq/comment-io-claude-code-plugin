@@ -60,8 +60,9 @@ authority.
 `comment botlets setup` installs the botlet's per-bot credential profile at
 `<comment-io-home>/agents/<owner>.<slug>.json` (mode `0600`) with its `agent_secret`. Skills read
 that secret via a local helper for API calls and **never** print/echo `ark_`/`agent_secret` values.
-`comment botlets setup` requires `comment sync login` first (it needs library sync to project the
-brain) and one browser device-code approval.
+`/setup-botlet` owns projection authentication through the exact selected Comment.io origin and
+saved account; do not run a bare ambient `comment sync login`. When projection auth is missing, the
+skill follows the live local-sync guide and requests the one browser device-code approval.
 
 ## Common commands
 
@@ -85,7 +86,8 @@ session-scoped** Comment.io handle (`owner.e-xxxxxxxx`) that lives only for the 
 `{handle, agent_secret, display_name, expires_at, base_url, owner}`) — **distinct** from the
 permanent-agent store `agents/<handle>.json`. The asyncRewake Stop hook
 (`hooks/comment-rewake-listen` + `hooks/comment-rewake-fallback.mjs`) resolves an ephemeral secret
-from `ephemeral/` when `agents/` has no match, so an ephemeral session still wakes on @mentions.
+from `ephemeral/` when `agents/` has no match. That makes the exact origin-matched session eligible
+for plugin idle wake; it is only armed until a fresh @mention is observed and settled end to end.
 
 Ephemeral handles are **never** botlets and never become daemon-managed: they are not in
 `registry.json`, have no managed session, and are not driven by `comment run`. Do not promote an
@@ -97,8 +99,9 @@ Ephemeral handles are **never** botlets and never become daemon-managed: they ar
 A botlet is a `bots[]` entry in `<botlets-root>/registry.json` (the daemon's registry schema) with a
 `brain_ref` and `managed_session`. Whichever daemon is paired for your account enrolls and runs it;
 the agent-sandbox model runs botlets in a container. The daemon keeps a background notification
-poller per loaded profile, so `@mentions` and scheduled `botlets.task` runs reach the botlet through
-the bus.
+poller per loaded profile. That makes the selected profile/runtime eligible and armed; do not claim
+`@mentions` or scheduled `botlets.task` runs reach the botlet until the exact route passes the
+fresh-event receive/read/respond/settle check in <https://comment.io/llms/notifications.txt>.
 
 The plugin ships **two complementary Stop hooks** (they do not double-deliver):
 `comment-rewake-listen` (async/asyncRewake) is the **idle** path — it backgrounds a

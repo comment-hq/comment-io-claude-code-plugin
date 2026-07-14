@@ -9,13 +9,51 @@ disable-model-invocation: true
 
 Distill completed work into a Comment.io botlet's **brain** memory. The brain is server-side (Comment.io docs, projected read-only locally); this skill writes to it **through the API**, never by editing local projection files. Single-pass v0; runs inline. Invoke only for an explicit `/compound` or from a botlet's finishing checklist.
 
-## Resolve home + registry + mode
+## Resolve one exact home + registry + mode
+
+A daemon-launched Comment.io session injects its exact home. Reuse it only when
+the matching managed-session marker is also present. A manually invoked skill
+must not guess `~/.comment-io` or `~/.comment-io-staging`: run `comment auth
+list`, ask the human to select one exact saved `ACCOUNT` + `ORIGIN` pair, and
+resolve that pair through the registry.
 
 ```bash
-CIO_HOME="${COMMENT_IO_HOME:-}"
-[ -n "$CIO_HOME" ] || { [ "$(printf '%s' "${COMMENT_IO_ENV:-}" | tr '[:upper:]' '[:lower:]')" = staging ] && CIO_HOME="$HOME/.comment-io-staging" || CIO_HOME="$HOME/.comment-io"; }
+if [ -n "${COMMENT_IO_HOME:-}" ] && { [ -n "${COMMENT_IO_SESSION_ID:-}" ] || [ -n "${COMMENT_IO_BOT_NAME:-}" ]; }; then
+  CIO_HOME="$COMMENT_IO_HOME"
+  comment_selected() {
+    env -u NODE_OPTIONS -u COMMENT_IO_ACCOUNT -u COMMENT_IO_ENV \
+      -u COMMENT_IO_BASE_URL -u COMMENT_IO_STAGING_BASE_URL \
+      COMMENT_IO_HOME="$CIO_HOME" comment "$@"
+  }
+else
+  env -u NODE_OPTIONS -u COMMENT_IO_HOME -u COMMENT_IO_ACCOUNT -u COMMENT_IO_ENV \
+    -u COMMENT_IO_BASE_URL -u COMMENT_IO_STAGING_BASE_URL comment auth list
+  # Pause for the human to choose exact literals from the ACCOUNT and ORIGIN columns.
+  CIO_ORIGIN=''  # exact ORIGIN selected by the human above
+  CIO_ACCOUNT='' # exact saved ACCOUNT selected by the human above
+  [ -n "$CIO_ORIGIN" ] && [ -n "$CIO_ACCOUNT" ] || { echo 'Select one saved Comment.io account and origin first' >&2; exit 1; }
+  PRINCIPAL_JSON="$(env -u NODE_OPTIONS -u COMMENT_IO_HOME -u COMMENT_IO_ACCOUNT -u COMMENT_IO_ENV \
+    -u COMMENT_IO_BASE_URL -u COMMENT_IO_STAGING_BASE_URL \
+    comment --origin "$CIO_ORIGIN" --account "$CIO_ACCOUNT" auth resolve --json)" || exit 1
+  CIO_HOME="$(printf '%s' "$PRINCIPAL_JSON" | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["home"])')"
+  [ -n "$CIO_HOME" ] || { echo 'Selected Comment.io account has no resolved home' >&2; exit 1; }
+  comment_selected() {
+    env -u NODE_OPTIONS -u COMMENT_IO_HOME -u COMMENT_IO_ACCOUNT -u COMMENT_IO_ENV \
+      -u COMMENT_IO_BASE_URL -u COMMENT_IO_STAGING_BASE_URL \
+      comment --origin "$CIO_ORIGIN" --account "$CIO_ACCOUNT" "$@"
+  }
+fi
+if [ -z "${PRINCIPAL_JSON:-}" ]; then
+  PRINCIPAL_JSON="$(comment_selected auth resolve --json)" || exit 1
+fi
+CIO_ORIGIN="$(printf '%s' "$PRINCIPAL_JSON" | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["origin"])')"
+[ -n "$CIO_ORIGIN" ] || { echo 'Selected Comment.io account has no resolved origin' >&2; exit 1; }
 BOTLETS_ROOT="$CIO_HOME/botlets"
 ```
+
+Fill both empty selectors before running the block. If the selected pair does
+not resolve, stop and use that origin's `/llms/setup/full.txt`; do not switch to an
+ambient account or a deployment-default home.
 
 - Accept zero or one argument. With a `<slug>`, validate `^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$` and find it in `$BOTLETS_ROOT/registry.json`. With none, if this session is itself running as a botlet (a daemon-launched session — `COMMENT_IO_BOT_NAME` set / `claude --agent <slug>`), use that botlet's slug; otherwise ask which botlet and list names. (This applies to **both** cloud and legacy botlets; the mode is then determined from the entry's `brain_ref`, below — it does not imply a local `agents/<slug>.md`.)
 - **Mode:** `brain_ref` present → **cloud (brain mode)**; absent → **legacy local-only mode** (deprecated; old local-file behavior, at the end).
@@ -30,10 +68,10 @@ Scan the recent conversation for durable learning: decisions, lessons, surprises
 ## Brain mode (cloud botlet)
 
 ### Credentials (secret safety)
-The botlet's `agent_secret` is in `<comment-io-home>/agents/<owner>.<slug>.json` under the key `agent_secret`. **Use a local helper** (e.g. a short Python stdlib script) that reads the secret from that file *internally* and makes the HTTP calls — never put `agent_secret` in a shell argv, never print/echo it, never inline it into any output. The base URL is the profile's `base_url` (default `https://comment.io`).
+Use only the plugin's vetted private-helper contract for `<comment-io-home>/agents/<owner>.<slug>.json`; do not improvise a profile reader. The helper must open the exact human-selected profile without following symlinks, require an owner-only regular file, require a non-empty normalized `base_url` exactly equal to the frozen `$CIO_ORIGIN` (no production or other fallback), and read `agent_secret` internally. It must write Authorization to a mode-`0600` temporary header, delete it in the same shell call, keep `agent_secret` out of argv/model-visible output, and return no secret text. Any ownership, shape, handle, origin, or credential mismatch fails closed before an HTTP request.
 
 ### Freshen first
-Run `comment sync once` so the local projection reflects current brain docs before you read headers for `base_revision`.
+Run `comment_selected sync once` so the selected account's local projection reflects current brain docs before you read headers for `base_revision`.
 
 ### Writes (all via the API, with the bot's `agent_secret`)
 For each target, read its **projection header** in `<sync-root>/Botlets/<owner>/<slug>/brain/<file>` to get `slug:` and `revision:`.
@@ -52,7 +90,7 @@ For each target, read its **projection header** in `<sync-root>/Botlets/<owner>/
 - **Other 4xx/5xx:** surface the non-secret error and which write failed; on partial success report exactly what landed (e.g. "MEMORY.md updated; daily note failed — retry").
 
 ### Finish
-Run `comment sync once` to refresh the local projection. Report the brain docs updated/created and the count of bullets/notes. Do not include secrets or long memory excerpts.
+Run `comment_selected sync once` to refresh the selected account's local projection. Report the brain docs updated/created and the count of bullets/notes. Do not include secrets or long memory excerpts.
 
 ## Legacy mode (botlet with no `brain_ref`)
 Prepend `(Legacy local-only botlet — deprecated.)` then run the previous local-file workflow under `<slug>/.lock`: append to `<slug>/MEMORY.md` (temp→fsync→rename), append the daily note, optionally write `<slug>/learnings/<slug-date>.md`, and update `<slug>/IDENTITY.md` frontmatter. Never delete local files. (No API writes in legacy mode.)
