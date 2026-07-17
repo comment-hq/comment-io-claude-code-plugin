@@ -161,16 +161,18 @@ Talk to the front door and it routes:
 | Skill | What it does |
 |---|---|
 | `comment-dev` | Front door — describe the work, it routes to the right path |
-| `comment-spec` · `comment-feature` · `comment-bug` | Shape / build / fix end-to-end to a merge-ready PR |
+| `delivery-methodology` | Choose direct vs controlled-lift delivery; bounded review receipts and promotion |
+| `comment-spec` · `comment-feature` · `comment-bug` | Shape / build / fix pragmatically to a technically ready PR |
 | `comment-prototype` | Fast "let me see it first" change; skips the gate, promote later |
-| `drive-plan` · `review-loop` · `ship` | Phased execution engine · looped reviewer panel · PR lifecycle |
+| `drive-plan` · `review-loop` · `ship` | Acceptance-driven execution · risk-scaled delta review · direct/lift PR lifecycle |
 | `worklog` · `steer` · `comment-identity` | The live record · human-in-the-loop · attributable handle |
-| `comment-init` | Scaffold a repo's `docs/TESTING.md` lanes + architecture docs the skills read |
+| `comment-init` | Scaffold a repo's delivery/testing config + architecture docs the skills read |
 | `code-review` · `file-bug` · `next` | One official PR review · file a GitHub issue · session handoff note |
 
 The skills are repo-agnostic: they read your repo's `AGENTS.md` (or `CLAUDE.md`)
-and the `docs/TESTING.md` it links for `fast` (iteration) vs `full` (pre-push)
-test lanes; `comment-init` scaffolds those if they're missing. The worklog path
+and linked delivery/testing docs for direct-vs-lift topology, focused iteration,
+review receipts, and final certification; `comment-init` scaffolds those if
+they're missing. The worklog path
 (`worklog`/`steer`/`comment-feature`/`comment-bug`/`comment-spec`) writes through
 the first working Comment.io route you already have. For otherwise
 uncredentialed direct REST, `comment-identity` creates a session-scoped handle
