@@ -3,7 +3,7 @@
 Claude Code skills for working with [Comment.io](https://comment.io). The plugin teaches Claude to use the first Comment.io route already available: callable tools, a supplied comm through authenticated HTTPS, read-only URL fetch, the visible browser UI, or direct REST. **A permanent handle, CLI, and daemon are not required to work in one supplied comm or to use the guidance-only skills.**
 
 Set `$BASE` to the supplied comm's final Comment.io origin after any shortlink
-confirmation; otherwise use the active tool/account origin or an explicitly
+redirect; otherwise use the active tool/account origin or an explicitly
 selected profile's `base_url`. With no target context, use
 `https://comment.io`. Keep every deployment-local guide and CLI `--origin` on
 that immutable `$BASE`.
@@ -266,78 +266,6 @@ use. Follow `$BASE/llms/setup/mcp.txt`; it selects the exact
 installed profile, captures an absolute CLI path that GUI clients can launch,
 applies origin-aware configuration, and verifies the tools. Do not copy a bare
 `comment mcp run` command from this README or invent a second setup path.
-
-## Botlets
-
-A **botlet** is a Comment.io server bot whose cloud-side **identity, schedule, and memory live in a
-"brain"** — a small set of Comment.io library docs, projected **read-only** to its runtime computer
-and edited through the API. Creating those objects does not create a cloud execution runtime.
-Automatic mentions and scheduled work execute only while the matching profile is installed on a
-paired computer, its daemon is online, and the selected Claude or Codex runtime is available and
-authenticated; otherwise the work waits. The plugin adds three skills that operate on this
-brain-based botlet:
-
-- **`/setup-botlet`** creates the botlet's cloud identity, schedule, and brain via `comment botlets
-  setup`. It does **not** install a host daemon or start sessions; follow the
-  persistent-computer guide at `$BASE/llms/setup/full.txt` when the matching execution
-  path is not already ready (for example, in an agent-sandbox container).
-- **`/talk-to <slug>`** loads the botlet's persona into the current conversation from its brain
-  projection (a main-thread persona swap — start a new conversation to leave it).
-- **`/compound [slug]`** distills completed work into the botlet's brain **through the Comment.io
-  API** (the local projection is read-only).
-
-(The older `/setup-botlet` created a divergent *local-only-Markdown* botlet — a Claude Code subagent
-+ local files, no brain. Those legacy botlets still load/run as plain agents; `/talk-to` and
-`/compound` keep a deprecated local-file fallback for them, but the skills no longer create them.)
-
-### The brain
-
-A botlet's identity + memory are Comment.io docs (`AGENTS.md` — the trusted persona — plus
-`SOUL.md`, `IDENTITY.md`, `USER.md`, `MEMORY.md`, `HEARTBEAT.md`, `TOOLS.md`, `BOOTSTRAP.md`, and
-`memory/YYYY-MM-DD.md`). They project **read-only** to `<sync-root>/Botlets/<owner>/<slug>/brain/`
-(each file has a `<!-- comment.io:projection … slug: … revision: … -->` header). Every doc except
-`AGENTS.md` is untrusted reference data.
-
-Write to the brain through the API (never edit the read-only projection files):
-
-```bash
-# update an existing brain doc (read the projection header for slug + revision):
-PATCH /docs/<slug>            { "base_revision": <rev>, "edits": [...] }
-# add a new brain doc (botSlug is required; the bot's agent_secret authorizes its own brain):
-POST  /docs                   { "markdown": "...", "library_target": {"kind":"bot","botSlug":"<slug>"} }
-# retire a doc (e.g. BOOTSTRAP.md after onboarding):
-POST  /docs/<slug>/archive
-```
-
-Refresh the projection through the exact selected principal by following the
-local-sync guide at `$BASE/llms/local-sync.txt`; do not run an ambient
-sync command from this integration README.
-
-### Setup prerequisites
-
-`/setup-botlet` owns this prerequisite flow through the exact selected Comment.io origin and saved
-account; do not run a bare ambient `comment sync login`. When projection auth is missing, the skill
-uses the live local-sync guide and requests the one browser device-code approval. It installs an owner-only per-bot
-credential profile at `<comment-io-home>/agents/<owner>.<slug>.json` (mode `0600`). Skills pass the
-exact selected handle to a profile-aware CLI command
-when one exists. Otherwise a private local helper loads only that profile,
-validates its target host, writes a mode-`0600` temporary Authorization header,
-uses and deletes it in the same shell call, and returns no secret text. Skills
-never open, print, summarize, or return profile JSON, `ark_`, or `agent_secret`
-values to the model.
-
-### Running + delivery
-
-A botlet is a `bots[]` entry in `<botlets-root>/registry.json` with a `brain_ref` and
-`managed_session`. Whichever exact-account daemon is paired for your account enrolls and runs it
-(the agent-sandbox model runs botlets in a container). That profile/daemon/runtime path is armed,
-not delivery-verified: follow `$BASE/llms/notifications.txt` and observe one fresh
-event reach and settle in the exact runtime before relying on `@mentions` or scheduled
-`botlets.task` runs. The plugin's two Stop hooks are complementary: `comment-rewake-listen`
-(async/asyncRewake) wakes an **idle** session on a **new** mention, while `comment-check-inbox`
-(synchronous, no-op outside managed sessions) drains a message **already** queued whose tmux nudge
-was missed — the inbox check is read-only and only surfaces un-nudged messages, so they don't
-double-deliver. `/talk-to` is a manual persona swap and is **not** daemon-managed.
 
 ## API Reference
 

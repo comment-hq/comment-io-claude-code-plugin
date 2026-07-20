@@ -1,5 +1,5 @@
 {
-  "description": "Wake an idle Claude Code session when a Comment.io @mention arrives (async asyncRewake Stop hook, no keystroke injection), surface queued bus messages in managed botlet sessions when a tmux nudge was missed, and flush a managed botlet session's working memory to its daily note once before it goes idle so a kill/restart does not lose it.",
+  "description": "Wake an idle Claude Code session when a Comment.io @mention arrives (async asyncRewake Stop hook, no keystroke injection) and surface queued bus messages when a tmux nudge was missed.",
   "hooks": {
     "Stop": [
       {
@@ -21,16 +21,6 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/comment-check-inbox",
-            "args": [],
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/comment-flush-memory",
             "args": [],
             "timeout": 5
           }
